@@ -244,6 +244,23 @@ class SimulatedBroker(Broker):
         self.balance += pnl
         partial = close_lots < pos.lots
 
+        # R-multiple NET of costs.
+        #
+        # The textbook definition is price-move / initial-risk, which ignores
+        # commission and swap. That is fine for managing a live position (you
+        # cannot trail a stop on commission), and Position.r_multiple() keeps
+        # using it for exactly that. But in a *report* it is actively
+        # misleading: a system can show "+0.07R expectancy" while its profit
+        # factor is 0.97 and the account shrinks, because every trade quietly
+        # leaked a few dollars of commission that R never saw. Here we divide
+        # the realised, cost-inclusive P&L by the money that was actually at
+        # risk, so expectancy_r and profit factor can never disagree about
+        # whether the strategy makes money.
+        commission_share = pos.commission * close_lots / max(pos.initial_lots, 1e-9)
+        net_pnl = pnl - commission_share
+        risk_money = spec.money_per_lot(pos.risk_distance) * close_lots
+        net_r = (net_pnl / risk_money) if risk_money > 0 else 0.0
+
         trade = Trade(
             ticket=pos.ticket,
             symbol=pos.symbol,
@@ -253,11 +270,11 @@ class SimulatedBroker(Broker):
             exit_price=exit_price,
             open_time=pos.open_time,
             close_time=self.now,
-            pnl=round(pnl - (pos.commission * close_lots / max(pos.initial_lots, 1e-9)), 6),
-            commission=round(pos.commission * close_lots / max(pos.initial_lots, 1e-9), 4),
+            pnl=round(net_pnl, 6),
+            commission=round(commission_share, 4),
             swap=round(swap_share, 4),
             reason=reason,
-            r_multiple=round(pos.r_multiple(exit_price), 4),
+            r_multiple=round(net_r, 4),
             mae=pos.max_adverse,
             mfe=pos.max_favourable,
             bars_held=pos.bars_held,

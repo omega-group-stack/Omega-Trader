@@ -8,13 +8,14 @@ log — is visible here, and the kill-switch is one click away.
 
 from __future__ import annotations
 
+import hmac
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import AppConfig
@@ -23,6 +24,36 @@ from ..engine.live import LiveTrader
 
 log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).parent / "static"
+
+_LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
+<title>Omega-Trader — token required</title>
+<style>
+ body{background:#0d1117;color:#c9d1d9;font:15px/1.6 ui-sans-serif,system-ui,sans-serif;
+      display:grid;place-items:center;height:100vh;margin:0}
+ .card{background:#161b22;border:1px solid #30363d;border-radius:10px;
+       padding:28px 32px;max-width:420px}
+ h1{font-size:18px;margin:0 0 12px} code{color:#58a6ff}
+ input{width:100%;padding:9px;margin:12px 0;background:#0d1117;color:#c9d1d9;
+       border:1px solid #30363d;border-radius:6px;font-family:ui-monospace,monospace}
+ button{padding:9px 18px;background:#238636;color:#fff;border:0;border-radius:6px;
+        cursor:pointer;font-weight:600}
+</style></head><body><div class="card">
+<h1>🔒 Access token required</h1>
+<p>This dashboard can move real money, so it is behind a token.</p>
+<form onsubmit="location.search='?token='+encodeURIComponent(this.t.value);return false">
+  <input name="t" type="password" placeholder="dashboard.auth_token" autofocus>
+  <button type="submit">Unlock</button>
+</form>
+<p style="color:#8b949e;font-size:13px;margin-bottom:0">
+API clients may send <code>X-Omega-Token</code> instead.</p>
+</div></body></html>"""
+
+
+def _bearer(header: str) -> str:
+    parts = header.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return ""
 
 
 def create_app(trader: LiveTrader, cfg: Optional[AppConfig] = None) -> FastAPI:
@@ -42,6 +73,41 @@ def create_app(trader: LiveTrader, cfg: Optional[AppConfig] = None) -> FastAPI:
 
     app.state.trader = trader
     app.state.cfg = cfg
+
+    # ------------------------------------------------------------------ #
+    # Authentication
+    # ------------------------------------------------------------------ #
+    # /api/control can flatten your book and change your risk. If the server
+    # is reachable by anything other than your own machine, a token is the
+    # bare minimum. Empty token = open, and the startup banner says so loudly.
+    token = (cfg.dashboard.auth_token or "").strip()
+    if token:
+        @app.middleware("http")
+        async def require_token(request: Request, call_next):
+            if request.url.path in ("/api/health", "/login") or \
+                    request.url.path.startswith("/static"):
+                return await call_next(request)
+
+            supplied = (
+                request.headers.get("x-omega-token")
+                or _bearer(request.headers.get("authorization", ""))
+                or request.query_params.get("token")
+                or request.cookies.get("omega_token")
+                or ""
+            )
+            # Constant-time compare: a naive == leaks the token one byte at a
+            # time to anyone who can measure response latency.
+            if not hmac.compare_digest(supplied, token):
+                if request.url.path == "/":
+                    return HTMLResponse(_LOGIN_HTML, status_code=401)
+                return JSONResponse({"detail": "unauthorised"}, status_code=401)
+
+            response = await call_next(request)
+            # Refresh the cookie so a ?token=... link only has to be used once.
+            if request.query_params.get("token") == token:
+                response.set_cookie("omega_token", token, httponly=True,
+                                    samesite="lax", max_age=7 * 24 * 3600)
+            return response
 
     # ------------------------------------------------------------------ #
     # API

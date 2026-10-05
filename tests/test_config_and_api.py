@@ -207,3 +207,87 @@ def test_dashboard_html_is_served(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Omega-Trader" in response.text
+
+
+# --------------------------------------------------------------------------- #
+# Dashboard authentication
+# --------------------------------------------------------------------------- #
+@pytest.fixture(scope="module")
+def secured():
+    """A dashboard protected by a token, plus a factory for fresh clients.
+
+    Fresh clients matter: TestClient keeps cookies, and the middleware hands
+    one out after a successful ?token= request, so a reused client would
+    silently authenticate every later assertion.
+    """
+    cfg = AppConfig()
+    cfg.dashboard.auth_token = "sup3r-s3cret"
+    cfg.data.synthetic_bars = 1200
+    cfg.strategy.warmup_bars = 300
+    cfg.logging.level = "ERROR"
+    trader = LiveTrader(cfg).setup()
+    app = create_app(trader, cfg)
+    return lambda: TestClient(app)
+
+
+@pytest.mark.parametrize("path", [
+    "/api/state", "/api/equity", "/api/config", "/api/candles",
+])
+def test_api_requires_the_token(secured, path):
+    assert secured().get(path).status_code == 401
+
+
+def test_health_stays_open_so_monitoring_still_works(secured):
+    assert secured().get("/api/health").status_code == 200
+
+
+def test_static_assets_stay_open(secured):
+    assert secured().get("/static/app.js").status_code == 200
+
+
+@pytest.mark.parametrize("make_request", [
+    lambda c: c.get("/api/state", headers={"X-Omega-Token": "sup3r-s3cret"}),
+    lambda c: c.get("/api/state", headers={"Authorization": "Bearer sup3r-s3cret"}),
+    lambda c: c.get("/api/state?token=sup3r-s3cret"),
+])
+def test_every_accepted_credential_channel_works(secured, make_request):
+    assert make_request(secured()).status_code == 200
+
+
+@pytest.mark.parametrize("bad", ["", "wrong", "sup3r-s3cre", "sup3r-s3cret "])
+def test_near_miss_tokens_are_rejected(secured, bad):
+    response = secured().get("/api/state", headers={"X-Omega-Token": bad})
+    assert response.status_code == 401
+
+
+def test_control_endpoint_cannot_be_driven_without_the_token(secured):
+    """The endpoint that can flatten a live book."""
+    for action in ("halt", "flatten", "stop", "risk"):
+        response = secured().post("/api/control", json={"action": action})
+        assert response.status_code == 401, action
+
+
+def test_control_endpoint_works_with_the_token(secured):
+    response = secured().post(
+        "/api/control", json={"action": "halt"},
+        headers={"X-Omega-Token": "sup3r-s3cret"},
+    )
+    assert response.status_code == 200
+
+
+def test_browser_gets_a_login_page_not_a_json_error(secured):
+    response = secured().get("/")
+    assert response.status_code == 401
+    assert "Access token required" in response.text
+
+
+def test_query_token_sets_a_cookie_so_the_link_is_needed_once(secured):
+    client = secured()
+    client.get("/?token=sup3r-s3cret")
+    assert client.cookies.get("omega_token") == "sup3r-s3cret"
+    assert client.get("/api/state").status_code == 200
+
+
+def test_no_token_configured_means_no_authentication(client):
+    """Backwards compatible: local users are not forced into a token."""
+    assert client.get("/api/state").status_code == 200

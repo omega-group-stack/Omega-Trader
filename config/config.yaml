@@ -177,10 +177,41 @@ data:
 # ── Dashboard ───────────────────────────────────────────────────────────────
 dashboard:
   enabled: true
-  host: 0.0.0.0
+  host: 0.0.0.0                # 127.0.0.1 + an SSH tunnel is the safest setup
   port: 8080
   refresh_ms: 2000
   title: Omega-Trader
+  # POST /api/control can flatten your book and change your risk. If `host` is
+  # anything other than 127.0.0.1, SET THIS. Empty means no authentication and
+  # the bot will warn you loudly at startup.
+  #   python -c "import secrets; print(secrets.token_hex(24))"
+  auth_token: "${OMEGA_DASH_TOKEN:-}"
+
+# ── Notifications ───────────────────────────────────────────────────────────
+# Telegram push + remote control. Outbound-only, so nothing has to be exposed
+# on the VPS. Test it with:  omega notify test
+notifications:
+  enabled: false
+  provider: telegram           # telegram | none
+  on_entry: true
+  on_exit: true
+  on_halt: true                # a risk guard tripped — you want this one
+  on_error: true
+  on_lifecycle: true           # loop started / stopped
+  on_daily_summary: true
+  daily_summary_hour: 21       # UTC hour for the roll-up
+  heartbeat_minutes: 0         # 0 = off; e.g. 240 for a silent 4-hourly ping
+  telegram:
+    # Keep secrets in the environment, not in this file.
+    bot_token: "${TELEGRAM_BOT_TOKEN:-}"   # from @BotFather
+    chat_id: "${TELEGRAM_CHAT_ID:-}"       # your user id, or a negative group id
+    allow_commands: true       # long-poll for /status, /halt, /risk ...
+    allow_flatten: true        # false = read-only remote control
+    poll_timeout_seconds: 50
+    timeout_seconds: 20.0
+    max_retries: 4
+    min_interval_seconds: 0.4
+    queue_size: 500
 
 logging:
   level: INFO

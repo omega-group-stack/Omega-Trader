@@ -18,6 +18,12 @@ logs/
 reports/
 data/cache/
 *.csv.gz
+research/
+
+# Market data — regenerate with `omega data download`, don't commit megabytes
+data/*.csv
+data/*.hst
+data/*.zip
 
 # Secrets — never commit broker credentials
 .env

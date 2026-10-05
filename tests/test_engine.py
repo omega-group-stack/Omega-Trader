@@ -258,3 +258,77 @@ def test_halt_and_flatten_controls():
     trader.resume()
     assert not trader.risk.state.halted
     assert trader.flatten() == 0  # nothing open yet
+
+
+# --------------------------------------------------------------------------- #
+# R-multiple and money must never disagree
+# --------------------------------------------------------------------------- #
+def test_every_trades_r_multiple_has_the_same_sign_as_its_money():
+    """A trade that lost money must never be reported as a positive R.
+
+    This is the invariant that a *gross* R-multiple breaks. Defining R as
+    price-move / initial-risk ignores commission and swap, so a trade that
+    moved +3 pips and paid $8 of commission shows "+0.15R" while the balance
+    went down. Closed-trade R is pnl / risk-money, so the two can never
+    disagree about direction.
+
+    Note the weaker claim: *portfolio* expectancy-in-R and profit factor can
+    still disagree, because R normalises by each trade's own risk and the
+    risk per trade is not constant. Only the per-trade sign is guaranteed.
+    """
+    cfg = AppConfig()
+    cfg.data.synthetic_bars = 9000
+    cfg.data.history_bars = 9000
+    cfg.execution.commission_per_lot = 25.0     # exaggerate the cost drag
+    cfg.logging.level = "ERROR"
+    result = Backtester(cfg).run()
+
+    assert len(result.trades) > 20, "need a meaningful sample"
+    for trade in result.trades:
+        if abs(trade.pnl) < 1e-9:
+            continue
+        assert (trade.pnl > 0) == (trade.r_multiple > 0), (
+            f"trade #{trade.ticket} pnl {trade.pnl:+.2f} but "
+            f"R {trade.r_multiple:+.3f} — R is ignoring costs again"
+        )
+
+
+def test_total_net_profit_and_profit_factor_agree():
+    """The two money-based headline numbers must tell the same story."""
+    cfg = AppConfig()
+    cfg.data.synthetic_bars = 9000
+    cfg.data.history_bars = 9000
+    cfg.logging.level = "ERROR"
+    perf = Backtester(cfg).run().performance
+    if perf.profit_factor > 1.0:
+        assert perf.net_profit > 0
+    elif perf.profit_factor < 1.0:
+        assert perf.net_profit < 0
+
+
+def test_r_multiple_is_net_of_commission():
+    """Two identical runs differing only in commission must differ in R."""
+    def run(commission):
+        cfg = AppConfig()
+        cfg.data.synthetic_bars = 6000
+        cfg.data.history_bars = 6000
+        cfg.execution.commission_per_lot = commission
+        cfg.logging.level = "ERROR"
+        return Backtester(cfg).run().performance
+
+    free = run(0.0)
+    costly = run(40.0)
+    assert costly.expectancy_r < free.expectancy_r
+
+
+def test_a_stopped_out_trade_loses_slightly_more_than_one_r_after_costs():
+    """-1R is the gross ideal; costs make the real number worse, never better."""
+    cfg = AppConfig()
+    cfg.data.synthetic_bars = 9000
+    cfg.data.history_bars = 9000
+    cfg.logging.level = "ERROR"
+    result = Backtester(cfg).run()
+    stops = [t for t in result.trades if t.reason is CloseReason.STOP_LOSS]
+    assert stops, "expected some stop-outs"
+    avg = sum(t.r_multiple for t in stops) / len(stops)
+    assert -1.6 < avg < -1.0, f"average stop-out was {avg:+.3f}R"

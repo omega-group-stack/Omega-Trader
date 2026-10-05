@@ -49,17 +49,10 @@ def load_config(path: Optional[str], overrides: Sequence[str] = ()) -> AppConfig
 
 def _apply_override(cfg: AppConfig, dotted: str, raw: str) -> None:
     """Apply ``risk.risk_per_trade_pct=0.5`` style overrides."""
-    target: Any = cfg
-    parts = dotted.split(".")
-    for part in parts[:-1]:
-        target = getattr(target, part, None)
-        if target is None:
-            raise SystemExit(f"unknown config section in {dotted!r}")
-    leaf = parts[-1]
-    if not hasattr(target, leaf):
-        raise SystemExit(f"unknown config key {dotted!r}")
-    current = getattr(target, leaf)
-    setattr(target, leaf, _coerce(raw, current))
+    try:
+        cfg.set(dotted, raw)
+    except KeyError as exc:
+        raise SystemExit(str(exc).strip('"')) from exc
 
 
 def _coerce(raw: str, like: Any) -> Any:
@@ -180,7 +173,23 @@ def _run_live(args: argparse.Namespace, mode: str) -> int:
 
         trader.start()
         app = create_app(trader, cfg)
-        log.info("Dashboard on http://%s:%s", cfg.dashboard.host, cfg.dashboard.port)
+
+        host = cfg.dashboard.host
+        if not cfg.dashboard.auth_token and host not in ("127.0.0.1", "localhost"):
+            log.warning("=" * 70)
+            log.warning("DASHBOARD IS UNAUTHENTICATED and bound to %s", host)
+            log.warning("Anyone who can reach port %s can flatten your positions,",
+                        cfg.dashboard.port)
+            log.warning("change your risk percentage and halt the bot.")
+            log.warning("Fix it with EITHER of:")
+            log.warning("  --set dashboard.auth_token=$(openssl rand -hex 24)")
+            log.warning("  --set dashboard.host=127.0.0.1   (then use an SSH tunnel)")
+            log.warning("=" * 70)
+        elif cfg.dashboard.auth_token:
+            log.info("Dashboard authentication is ON "
+                     "(open /?token=... once, then the cookie carries it).")
+
+        log.info("Dashboard on http://%s:%s", host, cfg.dashboard.port)
         try:
             uvicorn.run(app, host=cfg.dashboard.host, port=cfg.dashboard.port,
                         log_level="warning", access_log=False)
@@ -366,6 +375,114 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_notify(args: argparse.Namespace) -> int:
+    """Send a test message / verify the Telegram wiring end to end."""
+    from omega.notify.telegram import TelegramNotifier
+
+    cfg = load_config(args.config, args.set)
+    tc = cfg.notifications.telegram
+    notifier = TelegramNotifier(tc, events=cfg.notifications)
+
+    if not notifier.configured:
+        print("Telegram is not configured.\n")
+        print("  1. Talk to @BotFather on Telegram, send /newbot, copy the token.")
+        print("  2. Send any message to your new bot, then open")
+        print("     https://api.telegram.org/bot<TOKEN>/getUpdates")
+        print("     and copy message.chat.id.")
+        print("  3. Export them (recommended — keeps secrets out of the YAML):")
+        print("       export TELEGRAM_BOT_TOKEN=123456:ABC...")
+        print("       export TELEGRAM_CHAT_ID=987654321")
+        print("     or set notifications.telegram.bot_token / .chat_id.")
+        print("  4. Then:  omega notify test")
+        return 1
+
+    text = args.message or (
+        "✅ <b>Omega-Trader</b> is wired up.\n"
+        f"mode <code>{cfg.execution.mode}</code>   "
+        f"symbols <code>{', '.join(s.name for s in cfg.active_symbols)}</code>   "
+        f"risk <b>{cfg.risk.risk_per_trade_pct:.2f}%</b>/trade\n"
+        "Send /help once the bot is running."
+    )
+    ok = notifier.send_now(text)
+    print("Sent." if ok else "Failed — see the log above.")
+    return 0 if ok else 1
+
+
+def cmd_walkforward(args: argparse.Namespace) -> int:
+    """Rolling optimise-then-test study. The only honest backtest number."""
+    from omega.engine.walkforward import walk_forward
+
+    cfg = load_config(args.config, args.set)
+    if args.symbol:
+        for sym in cfg.symbols:
+            sym.enabled = sym.name.upper() in {s.upper() for s in args.symbol}
+    validate_or_die(cfg)
+
+    grid: dict = {}
+    for item in args.param:
+        key, _, values = item.partition("=")
+        if not _:
+            raise SystemExit(f"--param expects key=v1,v2, got {item!r}")
+        grid[key.strip()] = [float(v) for v in values.split(",")]
+    if not grid:
+        grid = {"strategy.entry_threshold": [0.28, 0.40, 0.52]}
+        log.info("No --param given; using default grid %s", grid)
+
+    result = walk_forward(
+        cfg, grid,
+        is_months=args.is_months, oos_months=args.oos_months,
+        step_months=args.step_months, workers=args.workers,
+        checkpoint=args.json,
+    )
+    print(result.summary())
+
+    if args.json:
+        import json
+        Path(args.json).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json).write_text(json.dumps(result.to_dict(), indent=2),
+                                   encoding="utf-8")
+        print(f"\nWrote {args.json}")
+    return 0
+
+
+def cmd_data(args: argparse.Namespace) -> int:
+    """Download or inspect historical price files."""
+    from omega.data import download as dl
+
+    if args.data_command == "describe":
+        for path in args.paths:
+            info = dl.describe(path)
+            print(f"\n{info['path']}")
+            print(f"  bars        {info['bars']:,}")
+            print(f"  range       {info['start']}  ->  {info['end']}"
+                  f"   ({info['years']:.2f} years)")
+            print(f"  median gap  {info['median_gap']}"
+                  f"   (gaps > 3x median: {info['large_gaps']})")
+            print(f"  duplicates  {info['duplicate_times']}"
+                  f"   zero-volume bars: {info['zero_volume_bars']}")
+            print(f"  spread col  {'yes' if info['has_spread'] else 'no'}")
+            print(f"  price range {info['price_range'][0]} .. {info['price_range'][1]}")
+        return 0
+
+    timeframes = args.timeframe or ["M15", "H1", "H4", "D1"]
+    written = []
+    for tf in timeframes:
+        written.append(
+            dl.download_github_csv(
+                args.symbol, tf, out_dir=args.out,
+                repo=args.repo, path_template=args.path_template,
+            )
+        )
+    print(f"\nDownloaded {len(written)} file(s) into {args.out}/")
+    for path in written:
+        info = dl.describe(path)
+        print(f"  {path.name:<18} {info['bars']:>8,} bars  "
+              f"{str(info['start'])[:10]} -> {str(info['end'])[:10]}")
+    print("\nUse it with:")
+    print(f"  omega backtest --set data.source=csv --set data.csv_dir={args.out}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # Parser
 # --------------------------------------------------------------------------- #
@@ -439,6 +556,48 @@ def build_parser() -> argparse.ArgumentParser:
     ini.add_argument("path", nargs="?", default="config/config.yaml")
     ini.add_argument("--force", action="store_true")
     ini.set_defaults(func=cmd_init)
+
+    # notify
+    nt = sub.add_parser("notify", help="test the Telegram notification setup")
+    nsub = nt.add_subparsers(dest="notify_command", required=True)
+    ntt = nsub.add_parser("test", help="send a test message")
+    common(ntt)
+    ntt.add_argument("-m", "--message", help="custom message to send")
+    ntt.set_defaults(func=cmd_notify)
+
+    # walkforward
+    wf = sub.add_parser("walkforward",
+                        help="rolling out-of-sample study (trustworthy backtest)")
+    common(wf)
+    wf.add_argument("--param", action="append", default=[], metavar="KEY=V1,V2",
+                    help="parameter grid searched in-sample, repeatable")
+    wf.add_argument("--is-months", type=int, default=36, dest="is_months",
+                    help="in-sample window length in months (default 36)")
+    wf.add_argument("--oos-months", type=int, default=12, dest="oos_months",
+                    help="out-of-sample window length in months (default 12)")
+    wf.add_argument("--step-months", type=int, default=None, dest="step_months",
+                    help="roll step in months (default: = --oos-months)")
+    wf.add_argument("--workers", type=int, default=2)
+    wf.add_argument("--json", help="also write the full result to this path")
+    wf.set_defaults(func=cmd_walkforward)
+
+    # data
+    dt = sub.add_parser("data", help="download / inspect historical price files")
+    dsub = dt.add_subparsers(dest="data_command", required=True)
+
+    dd = dsub.add_parser("download", help="fetch real OHLCV history from GitHub")
+    dd.add_argument("symbol", nargs="?", default="EURUSD")
+    dd.add_argument("-t", "--timeframe", action="append", default=None,
+                    help="timeframe to fetch (repeatable); default M15 H1 H4 D1")
+    dd.add_argument("-o", "--out", default="data", help="output directory")
+    dd.add_argument("--repo", help="override the source GitHub repository")
+    dd.add_argument("--path-template", dest="path_template",
+                    help="path inside the repo, e.g. 'fx/{symbol}_{tf}.csv'")
+    dd.set_defaults(func=cmd_data)
+
+    ds = dsub.add_parser("describe", help="quality report for local CSV files")
+    ds.add_argument("paths", nargs="+")
+    ds.set_defaults(func=cmd_data)
 
     return parser
 

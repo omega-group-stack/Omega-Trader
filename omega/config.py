@@ -262,6 +262,23 @@ class ExecutionConfig:
     confirm_live: bool = False          # must be true to send real orders
 
 
+def _coerce_like(raw: Any, like: Any) -> Any:
+    """Coerce ``raw`` to the type of ``like``. Non-strings pass through."""
+    if isinstance(like, bool):
+        if isinstance(raw, bool):
+            return raw
+        return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    if isinstance(like, int) and not isinstance(like, bool):
+        return int(float(raw))
+    if isinstance(like, float):
+        return float(raw)
+    if isinstance(like, list):
+        if isinstance(raw, list):
+            return raw
+        return [p.strip() for p in str(raw).split(",") if p.strip()]
+    return raw
+
+
 @dataclass
 class DataConfig:
     source: str = "synthetic"           # mt5 | csv | synthetic
@@ -283,6 +300,46 @@ class DashboardConfig:
     port: int = 8080
     refresh_ms: int = 2_000
     title: str = "Omega-Trader"
+    # The dashboard exposes /api/control, which can flatten your book. If you
+    # bind it to anything other than localhost, set a token. Empty = no auth.
+    auth_token: str = ""
+
+
+@dataclass
+class TelegramConfig:
+    """Telegram bot credentials and behaviour.
+
+    Leave the token out of the YAML file and use the environment instead::
+
+        bot_token: "${TELEGRAM_BOT_TOKEN}"
+    """
+
+    bot_token: str = ""          # from @BotFather
+    chat_id: str = ""            # your user id or a group id (negative)
+    allow_commands: bool = True  # long-poll for /status, /halt, ...
+    allow_flatten: bool = True   # let /flatten close positions remotely
+    poll_timeout_seconds: int = 50   # Telegram long-poll window
+    timeout_seconds: float = 20.0
+    max_retries: int = 4
+    min_interval_seconds: float = 0.4   # throttle floor between sends
+    queue_size: int = 500
+
+
+@dataclass
+class NotificationConfig:
+    """Which events get pushed, and where."""
+
+    enabled: bool = False
+    provider: str = "telegram"      # telegram | none
+    on_entry: bool = True
+    on_exit: bool = True
+    on_halt: bool = True
+    on_error: bool = True
+    on_lifecycle: bool = True       # loop started / stopped
+    on_daily_summary: bool = True
+    daily_summary_hour: int = 21    # UTC hour to send the roll-up
+    heartbeat_minutes: int = 0      # 0 = off; otherwise a silent status ping
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
 
 
 @dataclass
@@ -316,6 +373,7 @@ class AppConfig:
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
 
     # -- helpers ------------------------------------------------------------
     @property
@@ -345,6 +403,28 @@ class AppConfig:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+    def set(self, dotted: str, value: Any) -> "AppConfig":
+        """Set a nested key by dotted path, coercing to the existing type.
+
+        ``cfg.set("risk.risk_per_trade_pct", "0.5")`` works as well as passing
+        a real float: strings are coerced to match whatever type currently
+        lives at that key, so CLI input and programmatic input behave the
+        same. Raises ``KeyError`` for an unknown path rather than silently
+        creating a key that nothing reads.
+        """
+        target: Any = self
+        parts = dotted.split(".")
+        for part in parts[:-1]:
+            target = getattr(target, part, None)
+            if target is None or is_dataclass(target) is False:
+                raise KeyError(f"unknown config section in {dotted!r}")
+        leaf = parts[-1]
+        if not hasattr(target, leaf):
+            raise KeyError(f"unknown config key {dotted!r}")
+        current = getattr(target, leaf)
+        setattr(target, leaf, _coerce_like(value, current))
+        return self
 
     def dump(self, path: str | os.PathLike[str]) -> None:
         p = Path(path)

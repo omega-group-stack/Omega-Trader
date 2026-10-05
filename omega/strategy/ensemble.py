@@ -47,6 +47,11 @@ class EnsembleStrategy:
 
     name = "ensemble"
 
+    #: When False, the per-block human-readable ``detail`` strings are skipped.
+    #: They exist only for the dashboard, and formatting six of them on every
+    #: bar costs roughly a third of a long backtest's runtime.
+    detailed: bool = True
+
     def __init__(self, cfg: StrategyConfig, spec: SymbolSpec) -> None:
         self.cfg = cfg
         self.spec = spec
@@ -148,7 +153,7 @@ class EnsembleStrategy:
                 name=block,
                 score=float(srow[block]),
                 weight=float(wrow[block]),
-                detail=_detail(block, row),
+                detail=_detail(block, row) if self.detailed else "",
             )
             for block in BLOCKS
         ]

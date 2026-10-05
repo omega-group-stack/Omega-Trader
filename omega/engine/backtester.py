@@ -87,6 +87,9 @@ class Backtester:
 
             data[sym] = df
             specs[sym] = spec
+            # Dashboard-only prose; pure overhead over hundreds of thousands
+            # of bars. Re-enabled implicitly for live/paper (class default).
+            strategy.detailed = False
             strategies[sym] = strategy
 
         broker = SimulatedBroker(cfg.execution, cfg.account, specs)

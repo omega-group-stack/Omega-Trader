@@ -27,6 +27,7 @@ from ..data.base import resample
 from ..data.timeframes import delta as tf_delta
 from ..execution import build_broker
 from ..execution.simulated import SimulatedBroker
+from ..notify import Notifier, NullNotifier, build_notifier
 from ..risk import RiskManager
 from ..strategy import EnsembleStrategy
 from .core import BarOutcome, TradingCore
@@ -43,8 +44,10 @@ class LiveTrader:
         cfg: AppConfig,
         feed: Optional[DataFeed] = None,
         broker=None,
+        notifier: Optional[Notifier] = None,
     ) -> None:
         self.cfg = cfg
+        self.notifier: Notifier = notifier or build_notifier(cfg)
         self.feed = feed or build_feed(cfg)
         self.symbols = [s.name.upper() for s in cfg.active_symbols]
         self.specs: Dict[str, SymbolSpec] = {}
@@ -57,6 +60,9 @@ class LiveTrader:
         self.core: Optional[TradingCore] = None
 
         self.events: Deque[dict] = deque(maxlen=500)
+        self._halt_notified = False
+        self._error_notified = ""
+        self._notified_tickets: set = set()
         self.started_at: Optional[datetime] = None
         self.last_tick: Optional[datetime] = None
         self.bars_processed = 0
@@ -117,6 +123,11 @@ class LiveTrader:
                     low=float(row["low"]), close=float(row["close"]),
                     volume=float(row["volume"]), spread=float(row["spread"]),
                 ))
+
+        # Attach *after* the trader is usable, so a /status arriving in the
+        # same millisecond finds a populated snapshot rather than a half-built
+        # object.
+        self.notifier.start(self)
 
         self._log_event(
             "ready",
@@ -215,6 +226,7 @@ class LiveTrader:
                     self.error = str(exc)
                     log.exception("step failed: %s", exc)
                     self._log_event("error", str(exc))
+                self._notify_periodic()
                 iterations += 1
                 if max_iterations and iterations >= max_iterations:
                     break
@@ -222,6 +234,7 @@ class LiveTrader:
         finally:
             self.running = False
             self._log_event("stop", "trading loop stopped")
+            self.notifier.stop()
 
     def start(self) -> None:
         """Run the loop in a daemon thread."""
@@ -381,7 +394,78 @@ class LiveTrader:
             )
             self._log_event(kind, action, outcome.time)
 
+        position = outcome.opened
+        if position is not None:
+            signal = outcome.signal
+            try:
+                equity = self.broker.account().equity if self.broker else 0.0
+                spec = self.specs.get(outcome.symbol)
+                risk_money = (
+                    spec.money_per_lot(abs(position.entry_price - position.stop_loss))
+                    * position.lots if spec else 0.0
+                )
+                risk_pct = (risk_money / equity * 100) if equity else 0.0
+            except Exception:  # pragma: no cover - cosmetic only
+                risk_pct = self.cfg.risk.risk_per_trade_pct
+            self.notifier.trade_opened(
+                symbol=position.symbol,
+                side=position.side.value,
+                lots=position.lots,
+                price=position.entry_price,
+                stop=position.stop_loss,
+                target=position.take_profit,
+                risk_pct=risk_pct,
+                score=signal.score if signal else 0.0,
+                confidence=signal.confidence if signal else 0.0,
+                regime=signal.regime.value if signal else "",
+                reasons=list(signal.reasons) if signal else None,
+            )
+
+        for trade in outcome.closed:
+            self._notify_closed(trade)
+
+    def _notify_closed(self, trade: Trade) -> None:
+        # A trade can surface both from broker.process_bar() and from the
+        # core's own outcome; the ticket set keeps the chat from double-posting.
+        if trade.ticket in self._notified_tickets:
+            return
+        self._notified_tickets.add(trade.ticket)
+        balance = 0.0
+        try:
+            balance = self.broker.account().balance if self.broker else 0.0
+        except Exception:  # pragma: no cover
+            pass
+        self.notifier.trade_closed(trade, balance)
+
+    def _notify_periodic(self) -> None:
+        """Halt / heartbeat / daily-summary checks. Never raises."""
+        try:
+            state = getattr(self.risk, "state", None)
+            halted = bool(state and state.halted)
+            if halted and not self._halt_notified:
+                self._halt_notified = True
+                reason = getattr(state, "halt_reason", "") or "risk guard tripped"
+                self.notifier.halted(reason, self.snapshot())
+            elif not halted:
+                self._halt_notified = False
+
+            if self.error and self.error != self._error_notified:
+                self._error_notified = self.error
+                self.notifier.error(self.error)
+            elif not self.error:
+                self._error_notified = ""
+
+            snapshot = None
+            if getattr(self.cfg.notifications, "heartbeat_minutes", 0):
+                snapshot = self.snapshot()
+                self.notifier.heartbeat(snapshot)
+            if getattr(self.cfg.notifications, "on_daily_summary", False):
+                self.notifier.daily_summary(snapshot or self.snapshot())
+        except Exception as exc:  # pragma: no cover - notifications are cosmetic
+            log.debug("notification pass failed: %s", exc)
+
     def _log_trade(self, trade: Trade) -> None:
+        self._notify_closed(trade)
         self._log_event(
             "exit",
             f"closed #{trade.ticket} {trade.symbol} {trade.side.value} "
@@ -390,6 +474,8 @@ class LiveTrader:
         )
 
     def _log_event(self, kind: str, message: str, when: Optional[datetime] = None) -> None:
+        if kind in ("start", "stop"):
+            self.notifier.event(kind, message)
         self.events.append(
             {
                 "time": (when or datetime.now(timezone.utc)).isoformat(),
