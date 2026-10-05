@@ -26,7 +26,23 @@ def windows_of(cfg: SessionConfig) -> List[Tuple[time, time]]:
     return [(_parse(a), _parse(b)) for a, b in cfg.windows if a and b]
 
 
-def is_open(ts: datetime, cfg: SessionConfig) -> tuple[bool, str]:
+def intraday_filter_applies(bar_minutes: int) -> bool:
+    """Is an hour-of-day filter meaningful for bars of this size?
+
+    No, once a bar covers a whole day or more. A D1 candle is stamped 00:00
+    but represents every hour of that day, so asking "is 00:00 inside
+    07:00-16:30?" answers no for *every* daily bar and silently vetoes the
+    entire strategy. (That is not hypothetical: it produced exactly zero
+    trades over sixteen years of EURUSD D1 before this guard existed.)
+
+    The day-of-week rules still apply — "don't trade Sunday" is meaningful at
+    any bar size. Only the hour-of-day windows are dropped.
+    """
+    return bar_minutes < 1440
+
+
+def is_open(ts: datetime, cfg: SessionConfig,
+            bar_minutes: int = 1) -> tuple[bool, str]:
     """``(allowed, reason_if_blocked)`` for a single timestamp."""
     if not cfg.enabled:
         return True, ""
@@ -35,6 +51,9 @@ def is_open(ts: datetime, cfg: SessionConfig) -> tuple[bool, str]:
 
     if local.weekday() not in set(cfg.trade_days):
         return False, f"session: {local:%a} is not a trading day"
+
+    if not intraday_filter_applies(bar_minutes):
+        return True, ""
 
     if cfg.avoid_friday_after and local.weekday() == 4:
         if local.time() >= _parse(cfg.avoid_friday_after):
@@ -55,7 +74,8 @@ def is_open(ts: datetime, cfg: SessionConfig) -> tuple[bool, str]:
     return False, f"session: {t:%H:%M} outside trading windows"
 
 
-def mask(index: pd.DatetimeIndex, cfg: SessionConfig) -> pd.Series:
+def mask(index: pd.DatetimeIndex, cfg: SessionConfig,
+         bar_minutes: int = 1) -> pd.Series:
     """Vectorised version of :func:`is_open` for a whole index."""
     if not cfg.enabled:
         return pd.Series(True, index=index)
@@ -63,6 +83,11 @@ def mask(index: pd.DatetimeIndex, cfg: SessionConfig) -> pd.Series:
     idx = index.tz_convert(ZoneInfo(cfg.timezone)) if index.tz is not None else index
     minutes = idx.hour * 60 + idx.minute
     allowed = np.zeros(len(idx), dtype=bool)
+
+    if not intraday_filter_applies(bar_minutes):
+        # Daily and larger bars: only the day-of-week rule is meaningful.
+        return pd.Series(np.isin(idx.dayofweek, list(cfg.trade_days)),
+                         index=index)
 
     for start, end in windows_of(cfg):
         s = start.hour * 60 + start.minute

@@ -154,6 +154,16 @@ risk:
 execution:
   mode: paper                  # backtest | paper | live
   confirm_live: false          # ▸ must be true before real orders are sent
+  # ── Transaction costs ────────────────────────────────────────────────────
+  # These three numbers decide whether the strategy is profitable, and it is
+  # not close. On 16 years of EURUSD H1 the gross edge measured ~+0.06R per
+  # trade while the retail round trip below costs ~0.05R. Measured difference
+  # between the two presets: +0.042R per trade. See BACKTEST.md.
+  #
+  #   retail (standard account) : slippage 2.0, spread 12, commission 0-7
+  #   ECN / raw spread          : slippage 1.5, spread  2, commission 6
+  #
+  # Set them to YOUR broker's real numbers before believing any backtest.
   slippage_points: 2.0
   spread_points: 12.0          # fallback when the feed reports no spread
   commission_per_lot: 7.0      # round-turn, account currency

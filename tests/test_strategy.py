@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from omega.config import IndicatorConfig, RegimeConfig, SessionConfig, StrategyConfig
+from omega.config import (AppConfig, IndicatorConfig, RegimeConfig, SessionConfig,
+                          StrategyConfig)
 from omega.core.types import Regime, SignalDirection, SymbolSpec
 from omega.data.synthetic import SyntheticFeed, default_spec
 from omega.strategy import EnsembleStrategy, classify, is_open, weights_for
@@ -204,3 +205,75 @@ def test_scores_do_not_change_when_future_bars_are_added(market, spec):
     a = full.scores["ensemble"].iloc[cut - 200:cut]
     b = partial.scores["ensemble"].iloc[-200:]
     np.testing.assert_allclose(a.to_numpy(), b.to_numpy(), rtol=1e-9, atol=1e-12)
+
+
+# --------------------------------------------------------------------------- #
+# Session filter vs bar size
+# --------------------------------------------------------------------------- #
+def test_hour_of_day_filter_is_skipped_on_daily_bars():
+    """A D1 bar is stamped 00:00 but represents the whole day.
+
+    Applying an intraday window to it vetoes every single bar. This exact bug
+    produced zero trades over sixteen years of EURUSD D1.
+    """
+    from omega.strategy.sessions import mask
+
+    cfg = SessionConfig()           # default windows: 07:00-16:30, 13:00-21:00
+    index = pd.date_range("2023-01-02", periods=7, freq="D", tz="UTC")
+
+    daily = mask(index, cfg, 1440)
+    assert daily.sum() == 5, "Mon-Fri should trade, Sat/Sun should not"
+
+    intraday = mask(index, cfg, 15)
+    assert intraday.sum() == 0, "sanity: this is what the bug looked like"
+
+
+def test_weekly_bars_also_skip_the_hour_filter():
+    from omega.strategy.sessions import mask
+
+    index = pd.date_range("2023-01-02", periods=4, freq="7D", tz="UTC")
+    assert mask(index, SessionConfig(), 10_080).all()
+
+
+def test_day_of_week_rule_still_applies_to_daily_bars():
+    """Dropping the hour filter must not drop the weekday filter too."""
+    from omega.strategy.sessions import mask
+
+    cfg = SessionConfig(trade_days=[0, 1, 2])      # Mon, Tue, Wed only
+    index = pd.date_range("2023-01-02", periods=7, freq="D", tz="UTC")
+    assert mask(index, cfg, 1440).sum() == 3
+
+
+def test_intraday_bars_keep_the_full_window_filter():
+    from omega.strategy.sessions import mask
+
+    cfg = SessionConfig()
+    index = pd.date_range("2023-01-03 00:00", periods=24, freq="h", tz="UTC")
+    allowed = mask(index, cfg, 60)
+    assert not allowed.iloc[3], "03:00 is outside both windows"
+    assert allowed.iloc[14], "14:00 is inside the London/NY overlap"
+
+
+@pytest.mark.parametrize("bar_minutes,expected", [
+    (1, True), (15, True), (60, True), (240, True),
+    (1440, False), (10080, False),
+])
+def test_intraday_filter_applies_threshold(bar_minutes, expected):
+    from omega.strategy.sessions import intraday_filter_applies
+
+    assert intraday_filter_applies(bar_minutes) is expected
+
+
+def test_a_daily_strategy_actually_takes_trades():
+    """End-to-end guard: D1 must not silently produce an empty backtest."""
+    from omega.engine.backtester import Backtester
+
+    cfg = AppConfig()
+    cfg.data.synthetic_bars = 40_000      # enough M15 bars to build ~400 days
+    cfg.data.history_bars = 40_000
+    cfg.strategy.timeframe = "D1"
+    cfg.strategy.htf_timeframe = "W1"
+    cfg.strategy.warmup_bars = 120
+    cfg.logging.level = "ERROR"
+    result = Backtester(cfg).run()
+    assert result.performance.trades > 0, "D1 produced no trades at all"

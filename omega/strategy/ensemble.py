@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import StrategyConfig
+from ..data.timeframes import minutes as tf_minutes
 from ..core.types import ComponentScore, Regime, Signal, SignalDirection, SymbolSpec
 from . import regime as regime_mod
 from . import sessions
@@ -51,6 +52,13 @@ class EnsembleStrategy:
     #: They exist only for the dashboard, and formatting six of them on every
     #: bar costs roughly a third of a long backtest's runtime.
     detailed: bool = True
+
+    def _bar_minutes(self) -> int:
+        """Bar size in minutes — decides whether hour-of-day filtering applies."""
+        try:
+            return tf_minutes(self.cfg.timeframe)
+        except Exception:        # unknown timeframe string: assume intraday
+            return 1
 
     def __init__(self, cfg: StrategyConfig, spec: SymbolSpec) -> None:
         self.cfg = cfg
@@ -89,7 +97,7 @@ class EnsembleStrategy:
         self.scores = scores
         self.weights = self._weight_frame()
         self.session_ok = sessions.mask(
-            pd.DatetimeIndex(f.index), self.cfg.sessions
+            pd.DatetimeIndex(f.index), self.cfg.sessions, self._bar_minutes()
         )
         self._combine()
         return self
@@ -166,7 +174,8 @@ class EnsembleStrategy:
             vetoes.append(f"warm-up: bar {i} < {cfg.warmup_bars}")
 
         if not bool(self.session_ok.iloc[i]):
-            allowed, why = sessions.is_open(ts.to_pydatetime(), cfg.sessions)
+            allowed, why = sessions.is_open(ts.to_pydatetime(), cfg.sessions,
+                                            self._bar_minutes())
             vetoes.append(why or "session: closed")
 
         max_spread = self._max_spread_points()
