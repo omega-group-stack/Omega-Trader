@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Omega-Trader</title>
+<link rel="stylesheet" href="/static/styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>Ω</text></svg>" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="omega">Ω</span>
+    <div>
+      <h1>Omega-Trader</h1>
+      <p id="subtitle">connecting…</p>
+    </div>
+  </div>
+
+  <div class="status-group">
+    <span id="mode-badge" class="badge">—</span>
+    <span id="conn" class="conn"><i class="dot"></i><span id="conn-text">offline</span></span>
+  </div>
+
+  <div class="controls">
+    <label class="risk-field">
+      <span>Risk / trade</span>
+      <div>
+        <input id="risk-input" type="number" step="0.05" min="0.01" max="10" />
+        <span class="pct">%</span>
+        <button id="btn-risk" class="btn tiny">Set</button>
+      </div>
+    </label>
+    <button id="btn-run" class="btn primary">Start</button>
+    <button id="btn-flatten" class="btn warn">Flatten</button>
+    <button id="btn-halt" class="btn danger">Halt</button>
+  </div>
+</header>
+
+<div id="toast" class="toast"></div>
+
+<section class="kpis" id="kpis"></section>
+
+<main class="grid">
+
+  <section class="card chart-card">
+    <div class="card-head">
+      <h2>Price <span id="chart-symbol" class="muted"></span></h2>
+      <div class="legend">
+        <span><i class="sw ema-fast"></i>EMA fast</span>
+        <span><i class="sw ema-slow"></i>EMA slow</span>
+        <span><i class="sw ema-base"></i>EMA 200</span>
+        <span><i class="sw st"></i>Supertrend</span>
+      </div>
+    </div>
+    <canvas id="price-chart" height="300"></canvas>
+    <canvas id="score-chart" height="90"></canvas>
+  </section>
+
+  <section class="card signal-card">
+    <div class="card-head">
+      <h2>Ensemble decision</h2>
+      <span id="regime-chip" class="chip">—</span>
+    </div>
+    <div class="score-wrap">
+      <div class="score-main">
+        <span id="score-value">0.00</span>
+        <small id="score-dir">FLAT</small>
+      </div>
+      <div class="score-bar"><div class="zero"></div><div id="score-fill"></div>
+        <div class="thresh" id="th-pos"></div><div class="thresh" id="th-neg"></div>
+      </div>
+      <div class="score-meta">
+        <span>confidence <b id="confidence">—</b></span>
+        <span>agreement <b id="agreement">—</b></span>
+      </div>
+    </div>
+    <div id="blocks" class="blocks"></div>
+    <div id="verdict" class="verdict"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Equity curve</h2><span id="equity-delta" class="muted"></span></div>
+    <canvas id="equity-chart" height="170"></canvas>
+  </section>
+
+  <section class="card risk-card">
+    <div class="card-head"><h2>Risk budget</h2><span id="risk-state" class="chip">—</span></div>
+    <div id="risk-bars"></div>
+  </section>
+
+  <section class="card wide">
+    <div class="card-head"><h2>Open positions</h2><span id="pos-count" class="muted"></span></div>
+    <div class="table-wrap">
+      <table id="positions">
+        <thead><tr>
+          <th>Ticket</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th>
+          <th>Price</th><th>Stop</th><th>Target</th><th>Risk</th><th>R</th><th>P/L</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <div class="card-head"><h2>Closed trades</h2><span id="trade-count" class="muted"></span></div>
+    <div class="table-wrap scroll">
+      <table id="trades">
+        <thead><tr>
+          <th>Closed</th><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th>
+          <th>Exit</th><th>Reason</th><th>R</th><th>P/L</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <div class="card-head"><h2>Activity log</h2></div>
+    <ul id="events" class="events"></ul>
+  </section>
+
+</main>
+
+<footer>
+  <span>Omega-Trader · multi-indicator ensemble · <b id="foot-mode">—</b></span>
+  <span id="foot-note" class="muted">Past performance does not predict future results. Trade live only after extensive paper testing.</span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

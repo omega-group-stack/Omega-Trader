@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime artifacts
+runtime/
+logs/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+reports/
+data/cache/
+*.csv.gz
+
+# Secrets — never commit broker credentials
+.env
+config/secrets.yaml
+config/*.local.yaml
+
+.DS_Store
+.idea/
+.vscode/

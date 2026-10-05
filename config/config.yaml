@@ -1,0 +1,192 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Omega-Trader — configuration
+#  Every value below is optional: anything you delete falls back to the
+#  built-in default. Start with `execution.mode: paper` and stay there until
+#  the numbers convince you.
+# ═══════════════════════════════════════════════════════════════════════════
+
+account:
+  currency: USD
+  initial_balance: 10000       # used by backtest / paper only
+  leverage: 30
+
+# ── MetaTrader 5 terminal ──────────────────────────────────────────────────
+# Never hard-code credentials: export MT5_LOGIN / MT5_PASSWORD / MT5_SERVER
+# and they are substituted here at load time.
+mt5:
+  login: ${MT5_LOGIN:-0}
+  password: ${MT5_PASSWORD:-}
+  server: ${MT5_SERVER:-}
+  terminal_path: ""            # e.g. C:\Program Files\MetaTrader 5\terminal64.exe
+  magic: 920112                # Omega only ever touches positions with this id
+  deviation_points: 20
+
+# ── What to trade ───────────────────────────────────────────────────────────
+symbols:
+  - name: EURUSD
+    enabled: true
+    weight: 1.0                # scales this symbol's share of risk
+    max_spread_points: 25      # skip entries when the spread is wider
+  - name: GBPUSD
+    enabled: false
+    weight: 0.8
+    max_spread_points: 35
+  - name: USDJPY
+    enabled: false
+    weight: 0.8
+    max_spread_points: 30
+
+# ── Decision engine ─────────────────────────────────────────────────────────
+strategy:
+  timeframe: M15               # trading timeframe
+  htf_timeframe: H4            # higher-timeframe bias filter
+  warmup_bars: 300             # bars reserved for indicator warm-up
+
+  entry_threshold: 0.28        # |ensemble score| needed to open a trade
+  exit_threshold: 0.10         # score decay that closes a position...
+  exit_min_r: 0.6              # ...but only once it is +0.6R in profit
+  min_confidence: 0.45         # agreement-weighted conviction filter
+  min_agreeing_blocks: 3       # of the 6 blocks, how many must agree
+  require_htf_alignment: true  # refuse trades fighting the higher timeframe
+
+  allow_longs: true
+  allow_shorts: true
+  allow_pyramiding: false
+  reverse_on_flip: true        # close and flip on a hard opposite signal
+  flip_threshold: 0.45
+  cooldown_bars_after_exit: 2
+
+  # Relative influence of each voting block (before regime adjustment)
+  weights:
+    trend: 1.0
+    momentum: 0.9
+    volatility: 0.6
+    volume: 0.5
+    structure: 0.8
+    htf_bias: 1.0
+
+  # Indicator lookbacks
+  indicators:
+    ema_fast: 21
+    ema_slow: 55
+    ema_baseline: 200
+    adx_period: 14
+    supertrend_period: 10
+    supertrend_mult: 3.0
+    rsi_period: 14
+    stoch_k: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    atr_period: 14
+    bb_period: 20
+    bb_std: 2.0
+    donchian_period: 20
+    mfi_period: 14
+
+  # Market-regime detection re-weights the blocks automatically
+  regime:
+    enabled: true
+    adx_trend: 23.0            # above this = trending
+    adx_range: 18.0            # below this = ranging
+    chop_range: 61.8
+    block_trades_in_quiet: false
+
+  # Trading hours, in the timezone below (server/broker time)
+  sessions:
+    enabled: true
+    timezone: UTC
+    windows:
+      - ["07:00", "16:30"]     # London
+      - ["13:00", "21:00"]     # New York
+    trade_days: [0, 1, 2, 3, 4]  # Mon–Fri
+    avoid_friday_after: "19:00"
+    close_all_before_weekend: true
+
+# ── Risk management — the most important section ────────────────────────────
+risk:
+  # ▸ THE headline knob: % of equity risked between entry and the initial stop
+  risk_per_trade_pct: 1.0
+  sizing_mode: percent_risk    # percent_risk | fixed_lot | equity_fraction
+  risk_base: equity            # equity | balance
+  scale_risk_with_confidence: true
+  min_risk_multiplier: 0.5     # at min_confidence
+  max_risk_multiplier: 1.25    # at full conviction
+
+  # Stops & targets
+  stop_mode: atr               # atr | fixed_pips | structure
+  atr_stop_mult: 2.0
+  min_stop_pips: 5
+  max_stop_pips: 200
+  target_mode: rr              # rr | atr | none
+  risk_reward: 1.8
+  use_trailing_stop: true
+  trail_mode: chandelier       # chandelier | atr | breakeven_only
+  trail_atr_mult: 2.5
+  trail_activate_r: 1.0
+  breakeven_at_r: 1.0
+  breakeven_offset_pips: 1.0
+  partial_tp_r: 1.5            # bank half the position at +1.5R
+  partial_tp_fraction: 0.5
+  time_stop_bars: 0            # 0 = disabled
+
+  # Exposure limits
+  max_open_positions: 4
+  max_positions_per_symbol: 1
+  max_total_risk_pct: 4.0      # total risk across all open trades
+  max_currency_exposure: 2     # max open trades touching the same currency
+  max_lots_per_symbol: 5.0
+  min_free_margin_pct: 35.0
+
+  # Loss guards — these stop the bot, not just the trade
+  max_daily_loss_pct: 3.0
+  max_weekly_loss_pct: 6.0
+  max_drawdown_pct: 15.0       # hard kill-switch measured from the equity peak
+  max_daily_trades: 20
+  max_consecutive_losses: 4
+  cooldown_minutes_after_streak: 120
+  daily_profit_target_pct: 0.0 # 0 = keep trading
+  reduce_risk_after_loss: true
+  loss_risk_multiplier: 0.6    # trade at 60% size while in a losing streak
+  recovery_wins_needed: 2
+
+# ── Execution ───────────────────────────────────────────────────────────────
+execution:
+  mode: paper                  # backtest | paper | live
+  confirm_live: false          # ▸ must be true before real orders are sent
+  slippage_points: 2.0
+  spread_points: 12.0          # fallback when the feed reports no spread
+  commission_per_lot: 7.0      # round-turn, account currency
+  swap_enabled: true
+  fill_on: next_open           # next_open (honest) | close
+  stop_first_on_ambiguous_bar: true   # conservative intrabar assumption
+  poll_seconds: 5.0
+
+# ── Market data ─────────────────────────────────────────────────────────────
+data:
+  source: synthetic            # mt5 | csv | synthetic
+  csv_dir: data                # expects e.g. data/EURUSD_M15.csv
+  history_bars: 5000
+  start: ""                    # ISO date, backtest window
+  end: ""
+  synthetic_seed: 7
+  synthetic_bars: 6000
+  synthetic_stream: false      # reveal bars over time (demo/paper testing)
+  synthetic_speed: 120.0
+
+# ── Dashboard ───────────────────────────────────────────────────────────────
+dashboard:
+  enabled: true
+  host: 0.0.0.0
+  port: 8080
+  refresh_ms: 2000
+  title: Omega-Trader
+
+logging:
+  level: INFO
+  dir: runtime/logs
+  to_file: true
+
+storage:
+  enabled: true
+  path: runtime/omega.sqlite

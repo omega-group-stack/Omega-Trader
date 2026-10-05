@@ -1,0 +1,11 @@
+numpy>=1.26
+pandas>=2.1
+PyYAML>=6.0
+fastapi>=0.110
+uvicorn[standard]>=0.27
+
+# --- Optional / platform specific -------------------------------------------
+# MetaTrader5 is Windows-only. Install it on the machine that runs live trading:
+#   pip install MetaTrader5
+# The rest of Omega-Trader (backtest, paper, dashboard) runs fine without it.
+# MetaTrader5>=5.0.45 ; sys_platform == "win32"
