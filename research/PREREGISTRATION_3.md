@@ -142,3 +142,48 @@ dodges an early halt can take more trades than the unfiltered one (measured:
 what the test asserts. **Trade count is therefore not usable as a sanity
 check on whether the filter is active**; per-trade R is the metric of record,
 as already specified.
+
+
+---
+
+## Amendment 2 — the basket was mis-specified (recorded after one look at
+## development data, before any confirmation data was touched)
+
+The first development grid was run with the basket set to the seven USD
+majors. It produced an almost perfectly inert filter: 345 baseline trades
+versus 340 / 341 / 333 filtered, and expectancy differences in the fourth
+decimal (+0.2120R baseline, +0.2130R best cell). Before treating that as
+evidence about H3, the mechanism was checked, and it is a setup error rather
+than a result:
+
+> In a basket of the seven USD majors, **every non-USD currency appears in
+> exactly one pair**. USD appears in seven. So `strength(EUR)` is nothing but
+> the signed return of EURUSD itself, and
+> `spread(EURUSD) = z(EURUSD) + mean(z over the seven majors)` — the pair's
+> own return on both sides. The filter was re-asking the ensemble's own
+> momentum question, which is why it changed almost nothing. With no EUR
+> cross in the basket it is structurally incapable of distinguishing
+> "EUR strong against everything" from "EURUSD drifted", which is the entire
+> hypothesis.
+
+This is the same failure mode the unit test
+`test_an_idiosyncratic_move_does_not_produce_a_strong_score` was written to
+catch; that test passes only because its fixture includes EURGBP and EURJPY,
+and the production basket had no crosses at all.
+
+**Amended basket:** the seven majors plus ten crosses (EURGBP, EURJPY,
+EURCHF, EURAUD, EURCAD, EURNZD, GBPJPY, GBPCHF, GBPAUD, GBPCAD), giving
+coverage USD 7, EUR 7, GBP 6, AUD 3, CHF 3, CAD 3, JPY 3, NZD 2. An
+eighteenth pair, AUDCHF, was downloaded and discarded: every row was zero,
+stamped 1970-01-01. `build_strength` now rejects empty, constant or
+non-positive series instead of propagating `log(0) = -inf` through the
+cross-section, which would have vetoed every trade on every pair silently.
+
+**Cost to the experiment, stated plainly.** The EURUSD development set has
+now been looked at once under the old basket. The grid, the selection rule,
+the hypothesis and the success thresholds are unchanged, and the development
+grid is simply re-run with the corrected basket. **No confirmation pair has
+been run at all**, so the six-pair out-of-sample panel — the part that
+carries the statistical weight — remains untouched. The honest reading is
+that the development phase has cost one degree of freedom, and the
+confirmation test is still clean.

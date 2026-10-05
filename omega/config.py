@@ -182,8 +182,15 @@ class StrategyConfig:
     min_strength_agreement: float = 0.0
     strength_lookback: int = 24        # bars used for the trailing return
     strength_smooth: int = 3           # smoothing applied to the raw scores
+    # Majors alone are NOT enough: in a basket of seven USD pairs every
+    # non-USD currency appears exactly once, so its "strength" is just that
+    # pair's own return and the filter degenerates into pair momentum. The
+    # crosses are what let the cross-section separate "EUR is strong" from
+    # "EURUSD drifted".
     strength_basket: List[str] = field(default_factory=lambda: [
         "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY",
+        "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+        "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD",
     ])
     allow_longs: bool = True
     allow_shorts: bool = True

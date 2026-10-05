@@ -93,7 +93,21 @@ def build_strength(
             continue
         clean = pd.Series(series).astype(float)
         clean = clean[~clean.index.duplicated(keep="last")].sort_index()
-        usable[pair] = clean
+
+        # Reject degenerate series rather than let them poison the basket.
+        # A file of zeros gives log(0) = -inf, which propagates through the
+        # mean into every currency and silently vetoes the entire book. This
+        # is not hypothetical: one pair downloaded for experiment 3 arrived
+        # as all-zero rows stamped 1970-01-01.
+        positive = clean[clean > 0]
+        if len(positive) < 2 or positive.nunique() < 2:
+            log.warning("strength: ignoring %s — series is empty, constant or "
+                        "non-positive", symbol)
+            continue
+        if len(positive) < len(clean):
+            log.warning("strength: dropping %d non-positive rows from %s",
+                        len(clean) - len(positive), symbol)
+        usable[pair] = positive
 
     if len(usable) < 2:
         log.warning(

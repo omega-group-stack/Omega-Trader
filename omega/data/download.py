@@ -180,10 +180,23 @@ def list_github_releases(repo: str) -> List[dict]:
     return json.loads(raw.decode("utf-8"))
 
 
+#: Repository holding one directory per pair, each with a CSV per timeframe.
+_SNOWGURU = "TheSnowGuru/Stocks-Futures-Financial-Time-series-Tick-Bar-Data"
+
+#: Every pair that repository publishes. The seven USD majors are not enough
+#: on their own for cross-sectional work: in a basket of USD majors each
+#: non-USD currency appears in exactly one pair, so its "strength" is just
+#: that pair's own return. The crosses are what make the cross-section real.
+SNOWGURU_PAIRS: tuple[str, ...] = (
+    "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY",
+    "EURGBP", "EURJPY", "EURCHF", "EURAUD", "EURCAD", "EURNZD",
+    "GBPJPY", "GBPCHF", "GBPAUD", "GBPCAD", "AUDCAD", "AUDCHF",
+)
+
 #: Curated public OHLCV sets held directly in a git tree (symbol -> repo/path).
 GITHUB_CSV_SETS: Dict[str, tuple[str, str]] = {
-    "EURUSD": ("TheSnowGuru/Stocks-Futures-Financial-Time-series-Tick-Bar-Data",
-               "forex/eurusd/EURUSD_{tf}.csv"),
+    sym: (_SNOWGURU, f"forex/{sym.lower()}/{sym}_{{tf}}.csv")
+    for sym in SNOWGURU_PAIRS
 }
 
 

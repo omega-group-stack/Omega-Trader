@@ -302,3 +302,30 @@ def test_veto_reason_is_explained_to_the_user():
     vetoed = [strategy.signal_at(i, "EURUSD") for i in range(-50, 0)]
     texts = [v for s in vetoed for v in s.vetoes]
     assert any("cross-section disagrees" in t for t in texts)
+
+
+def test_an_all_zero_price_series_is_ignored_not_propagated():
+    """Regression: a corrupt download must not veto the entire book.
+
+    One of the CSVs pulled for experiment 3 arrived as all-zero rows stamped
+    1970-01-01. log(0) is -inf, which flows through the per-currency mean and
+    makes every score NaN -- the filter would then have blocked every trade on
+    every pair, silently.
+    """
+    index = pd.date_range("2020-01-01", periods=1200, freq="h", tz="UTC")
+    closes = {
+        "EURUSD": ramp(1.10, 2e-4, seed=1),
+        "GBPUSD": ramp(1.30, 1e-4, seed=2),
+        "USDJPY": ramp(110.0, -1e-4, seed=3),
+        "AUDCHF": pd.Series(0.0, index=index),
+    }
+    strength = build_strength(closes, lookback=24)
+    assert "AUD" not in strength.columns
+    assert np.isfinite(strength.to_numpy()).all()
+
+
+def test_a_constant_price_series_is_ignored():
+    closes = {"EURUSD": ramp(1.10, 2e-4, seed=1),
+              "GBPUSD": ramp(1.30, 1e-4, seed=2),
+              "USDCAD": pd.Series(1.35, index=ramp(1.0, 0.0).index)}
+    assert "CAD" not in build_strength(closes, lookback=24).columns
