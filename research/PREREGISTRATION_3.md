@@ -187,3 +187,49 @@ been run at all**, so the six-pair out-of-sample panel — the part that
 carries the statistical weight — remains untouched. The honest reading is
 that the development phase has cost one degree of freedom, and the
 confirmation test is still clean.
+
+---
+
+## Amendment 3 — the development grid selects the filter OFF
+
+Development grid, corrected 17-pair basket, EURUSD, walk-forward to 2021-09,
+ranked by the pre-registered `rank_score = efficiency × consistency`:
+
+| cell | eff | cons | rank | trades | expectancy | OOS return | maxDD | PF | win% |
+|---|---|---|---|---|---|---|---|---|---|
+| **lb24_ag0.0 / lb72_ag0.0 (baseline)** | 0.28 | 0.90 | **0.2511** | 345 | +0.2120R | +42.01% | 8.41% | 1.28 | 55.4 |
+| lb24_ag0.6 | 0.25 | 1.00 | 0.2490 | 326 | +0.2260R | +46.83% | 7.74% | 1.31 | 56.4 |
+| lb72_ag0.6 | 0.27 | 0.90 | 0.2457 | 332 | +0.2190R | +40.34% | 10.26% | 1.27 | 55.7 |
+| lb24_ag0.3 | 0.24 | 1.00 | 0.2400 | 341 | +0.2170R | +43.58% | 8.38% | 1.29 | 55.4 |
+| lb72_ag0.3 | 0.25 | 0.90 | 0.2268 | 339 | +0.1950R | +33.75% | 10.27% | 1.23 | 54.6 |
+
+Two things to record before going further.
+
+**1. The selection rule picks the filter off.** `min_strength_agreement = 0`
+ranks first. That is already evidence against H3, and it is written down here
+rather than quietly discarded. The two baseline cells are byte-identical
+across both lookbacks, which is the intended determinism check on the wiring.
+
+**2. The spread between cells is noise.** 0.2511 / 0.2490 / 0.2457 over ten
+folds and ~340 trades is not a ranking anybody should believe. The filtered
+cells do look mildly better on the metrics the rule does *not* use —
+lb24_ag0.6 has the best expectancy (+0.2260R vs +0.2120R), the only 100%
+fold consistency together with lb24_ag0.3, and the lowest drawdown — while
+ranking second on the rule itself.
+
+**Deviation, stated plainly.** Taken literally, "run the single winning
+configuration on the six other majors" now means running a no-op. That
+would answer nothing. The confirmation panel is therefore run with
+**lb24_ag0.6** as the filtered arm against the unfiltered baseline. This is
+an extra degree of freedom — best-of-four chosen after seeing development
+results — and it is bounded and disclosed: four candidates, and lb24_ag0.6 is
+simultaneously the best on expectancy, consistency and drawdown, so no metric
+was shopped for.
+
+It also does not weaken the test, because the decision thresholds are
+unchanged and the panel carries roughly six times the development sample.
+The honest prior going in: development already failed to prefer the filter,
+and the improvement on the metric of record is +0.014R against a +0.05R
+success bar. **H3 is expected to fail.** The panel is run anyway, because the
+point of pre-registration is to publish the answer you get, not the one you
+hoped for.
