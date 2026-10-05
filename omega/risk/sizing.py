@@ -92,7 +92,7 @@ def position_size(
         notes.append(f"fixed lot {cfg.fixed_lot}")
     elif mode == "equity_fraction":
         notional = equity * cfg.equity_fraction
-        raw_lots = notional / max(spec.contract_size * entry_price, 1e-9)
+        raw_lots = notional / max(spec.notional_per_lot(entry_price), 1e-9)
         notes.append(f"equity fraction {cfg.equity_fraction:.2%}")
     else:
         raw_lots = risk_money / loss_per_lot
@@ -110,17 +110,17 @@ def position_size(
         )
 
     # --- margin guard ---------------------------------------------------------
-    margin_required = lots * spec.contract_size * entry_price * spec.margin_rate
+    notional_per_lot = spec.notional_per_lot(entry_price)
+    margin_per_lot = notional_per_lot * spec.margin_rate
+    margin_required = lots * margin_per_lot
     if free_margin is not None and margin_required > free_margin > 0:
-        affordable = spec.normalize_lots(
-            free_margin / max(spec.contract_size * entry_price * spec.margin_rate, 1e-9)
-        )
+        affordable = spec.normalize_lots(free_margin / max(margin_per_lot, 1e-9))
         notes.append(
             f"margin-capped {lots:.2f} -> {affordable:.2f} lots "
             f"(need {margin_required:.0f}, free {free_margin:.0f})"
         )
         lots = affordable
-        margin_required = lots * spec.contract_size * entry_price * spec.margin_rate
+        margin_required = lots * margin_per_lot
 
     if cfg.max_lots_per_symbol and lots > cfg.max_lots_per_symbol:
         notes.append(f"capped at max_lots_per_symbol={cfg.max_lots_per_symbol}")

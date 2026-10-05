@@ -150,7 +150,7 @@ class SimulatedBroker(Broker):
             return OrderResult(False, message="no market price available")
 
         # margin check
-        required = lots * spec.contract_size * price * spec.margin_rate
+        required = lots * spec.notional_per_lot(price) * spec.margin_rate
         acct = self.account()
         if required > acct.free_margin:
             return OrderResult(
@@ -403,7 +403,7 @@ class SimulatedBroker(Broker):
     def _margin_of(self, pos: Position) -> float:
         spec = self.symbol_spec(pos.symbol)
         price = self.mid_price(pos.symbol) or pos.entry_price
-        return pos.lots * spec.contract_size * price * spec.margin_rate
+        return pos.lots * spec.notional_per_lot(price) * spec.margin_rate
 
 
 def _stop_reason(pos: Position) -> CloseReason:

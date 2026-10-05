@@ -354,3 +354,60 @@ def _losing_trade(pnl: float, when: datetime) -> Trade:
         entry_price=1.10, exit_price=1.09, open_time=when, close_time=when,
         pnl=pnl, reason=CloseReason.STOP_LOSS, r_multiple=-1.0,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Notional and margin for USD-base pairs
+# --------------------------------------------------------------------------- #
+def test_notional_per_lot_does_not_multiply_price_for_usd_base_pairs():
+    """One lot of USDJPY is already 100,000 USD.
+
+    Multiplying by the JPY price overstates the notional 114x, the margin
+    guard then caps the position, and the pair trades at a twentieth of its
+    configured risk. This went unnoticed across 482 USDJPY trades.
+    """
+    from omega.data.synthetic import default_spec
+
+    usdjpy = default_spec("USDJPY")
+    assert usdjpy.notional_per_lot(114.10) == pytest.approx(100_000.0)
+
+    eurusd = default_spec("EURUSD")
+    assert eurusd.notional_per_lot(1.10) == pytest.approx(110_000.0)
+
+
+def test_usd_base_pairs_get_their_full_configured_risk():
+    from omega.config import RiskConfig
+    from omega.data.synthetic import default_spec
+    from omega.risk.sizing import position_size
+
+    cfg = RiskConfig()
+    cfg.scale_risk_with_confidence = False
+
+    def risk_pct_for(symbol, price, stop):
+        spec = default_spec(symbol)
+        spec.commission_per_lot = 6.0
+        return position_size(spec=spec, cfg=cfg, equity=10_000.0,
+                             stop_distance=stop, entry_price=price,
+                             free_margin=10_000.0).risk_pct
+
+    # Every major should land near the configured 1%, JPY included.
+    assert risk_pct_for("EURUSD", 1.1000, 0.0030) == pytest.approx(1.0, abs=0.1)
+    assert risk_pct_for("USDJPY", 114.10, 0.375) == pytest.approx(1.0, abs=0.1)
+    assert risk_pct_for("USDCAD", 1.4600, 0.0040) == pytest.approx(1.0, abs=0.1)
+
+
+def test_margin_guard_still_caps_an_oversized_position():
+    """The fix must not disable the guard it was hiding in."""
+    from omega.config import RiskConfig
+    from omega.data.synthetic import default_spec
+    from omega.risk.sizing import position_size
+
+    cfg = RiskConfig()
+    cfg.scale_risk_with_confidence = False
+    cfg.risk_per_trade_pct = 50.0          # absurd on purpose
+    spec = default_spec("EURUSD")
+    result = position_size(spec=spec, cfg=cfg, equity=100_000.0,
+                           stop_distance=0.0005, entry_price=1.10,
+                           free_margin=4_000.0)
+    assert result.margin_required <= 4_000.0 + 1e-6
+    assert any("margin-capped" in n for n in result.notes)

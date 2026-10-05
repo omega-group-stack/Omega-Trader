@@ -199,6 +199,29 @@ class SymbolSpec:
             return 0.0
         return abs(price_distance) / self.tick_size * self.tick_value
 
+    def notional_per_lot(self, price: float) -> float:
+        """Exposure of 1.0 lot in the *account* currency (assumed USD).
+
+        One lot is ``contract_size`` units of the **base** currency, so the
+        account-currency notional is ``contract_size x (price of base in
+        USD)``.
+
+        * ``EURUSD`` — base EUR, quote USD. The price *is* USD per EUR, so
+          the notional is ``contract_size * price``.
+        * ``USDJPY`` — base USD. One lot is already 100,000 USD; the price is
+          JPY per USD and must **not** be multiplied in.
+
+        Getting this wrong is not cosmetic. Treating USDJPY's notional as
+        ``100,000 * 114`` overstates the margin requirement by 114x, the
+        margin guard then caps the position, and the pair silently trades at
+        a twentieth of its configured risk — which is exactly what happened
+        across 482 USDJPY trades before this was found.
+        """
+        base = (self.base or self.symbol[:3]).upper()
+        if base == "USD":
+            return self.contract_size
+        return self.contract_size * abs(float(price))
+
 
 # --------------------------------------------------------------------------- #
 # Strategy output
