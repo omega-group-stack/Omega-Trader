@@ -18,7 +18,8 @@ logs/
 reports/
 data/cache/
 *.csv.gz
-research/
+research/*.json
+research/*.log
 
 # Market data — regenerate with `omega data download`, don't commit megabytes
 data/*.csv
