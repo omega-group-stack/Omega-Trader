@@ -38,6 +38,7 @@ from ..data.timeframes import minutes as tf_minutes
 from ..core.types import ComponentScore, Regime, Signal, SignalDirection, SymbolSpec
 from . import regime as regime_mod
 from . import sessions
+from . import strength as strength_mod
 from .features import build_features, build_htf_features
 
 BLOCKS = ("trend", "momentum", "volatility", "volume", "structure", "htf_bias")
@@ -68,14 +69,26 @@ class EnsembleStrategy:
         self.regimes: pd.Series = pd.Series(dtype=object)
         self.weights: pd.DataFrame = pd.DataFrame()
         self.session_ok: pd.Series = pd.Series(dtype=bool)
+        #: Cross-sectional currency strength spread, aligned to our own index.
+        #: Empty unless a strength basket was supplied to prepare().
+        self.strength_spread: pd.Series = pd.Series(dtype=float)
 
     # ------------------------------------------------------------------ #
     # Preparation
     # ------------------------------------------------------------------ #
     def prepare(
-        self, df: pd.DataFrame, htf_df: Optional[pd.DataFrame] = None
+        self,
+        df: pd.DataFrame,
+        htf_df: Optional[pd.DataFrame] = None,
+        strength: Optional[pd.DataFrame] = None,
+        symbol: Optional[str] = None,
     ) -> "EnsembleStrategy":
-        """Compute indicators, block scores and regimes for the whole frame."""
+        """Compute indicators, block scores and regimes for the whole frame.
+
+        ``strength`` is the optional cross-sectional currency-strength frame
+        from :mod:`omega.strategy.strength`. When present, the agreement
+        filter in :meth:`signal_at` becomes active.
+        """
         ic = self.cfg.indicators
         f = build_features(df, ic)
         htf = build_htf_features(df, htf_df, self.cfg.htf_timeframe, ic)
@@ -99,6 +112,14 @@ class EnsembleStrategy:
         self.session_ok = sessions.mask(
             pd.DatetimeIndex(f.index), self.cfg.sessions, self._bar_minutes()
         )
+
+        if strength is not None and not strength.empty:
+            raw = strength_mod.pair_spread(strength, symbol or self.spec.symbol)
+            self.strength_spread = strength_mod.align(
+                raw, pd.DatetimeIndex(f.index)
+            )
+        else:
+            self.strength_spread = pd.Series(dtype=float)
         self._combine()
         return self
 
@@ -207,6 +228,22 @@ class EnsembleStrategy:
                 vetoes.append("longs disabled")
             if direction is SignalDirection.SHORT and not cfg.allow_shorts:
                 vetoes.append("shorts disabled")
+            threshold = cfg.min_strength_agreement
+            if threshold > 0 and not self.strength_spread.empty:
+                spread = float(self.strength_spread.iloc[i])
+                # Positive spread favours the base currency, i.e. a long.
+                aligned = spread * direction.sign
+                if aligned < threshold:
+                    vetoes.append(
+                        f"cross-section disagrees: strength spread "
+                        f"{spread:+.2f} (need {threshold:.2f} "
+                        f"{'above' if direction.sign > 0 else 'below'} zero)"
+                    )
+                else:
+                    reasons.append(
+                        f"cross-section confirms: strength spread {spread:+.2f}"
+                    )
+
             if cfg.require_htf_alignment:
                 htf = float(srow["htf_bias"])
                 if htf * direction.sign < -0.12:

@@ -60,6 +60,8 @@ class LiveTrader:
         self.core: Optional[TradingCore] = None
 
         self.events: Deque[dict] = deque(maxlen=500)
+        #: Cross-sectional currency strength, rebuilt each polling pass.
+        self.strength = None
         self._halt_notified = False
         self._error_notified = ""
         self._notified_tickets: set = set()
@@ -99,6 +101,8 @@ class LiveTrader:
         account = self.broker.account()
         self.risk = RiskManager(cfg.risk, account.equity or cfg.account.initial_balance)
 
+        self._refresh_strength()
+
         for sym in self.symbols:
             df = self._fetch(sym)
             self.data[sym] = df
@@ -106,7 +110,8 @@ class LiveTrader:
             strategy.max_spread_points = float(  # type: ignore[attr-defined]
                 cfg.symbol(sym).max_spread_points or 0.0
             )
-            strategy.prepare(df, resample(df, cfg.strategy.htf_timeframe))
+            strategy.prepare(df, resample(df, cfg.strategy.htf_timeframe),
+                             strength=self.strength, symbol=sym)
             self.strategies[sym] = strategy
             self._last_bar[sym] = df.index[-1].to_pydatetime()
 
@@ -146,6 +151,28 @@ class LiveTrader:
         if sc.commission_per_lot is None:
             spec.commission_per_lot = self.cfg.execution.commission_per_lot
 
+    def _refresh_strength(self) -> None:
+        """Rebuild the cross-sectional basket. Never fatal: a missing pair
+        degrades the filter, it does not stop trading."""
+        cfg = self.cfg
+        if cfg.strategy.min_strength_agreement <= 0:
+            self.strength = None
+            return
+        try:
+            from ..strategy.strength import build_strength, load_closes
+
+            basket = list(dict.fromkeys(
+                [s.upper() for s in cfg.strategy.strength_basket] + self.symbols
+            ))
+            closes = load_closes(self.feed, basket, cfg.strategy.timeframe,
+                                 cfg.data.history_bars)
+            frame = build_strength(closes, cfg.strategy.strength_lookback,
+                                   cfg.strategy.strength_smooth)
+            self.strength = frame if not frame.empty else None
+        except Exception as exc:
+            log.warning("could not refresh currency strength: %s", exc)
+            self.strength = None
+
     def _fetch(self, symbol: str) -> pd.DataFrame:
         return self.feed.candles(
             symbol, self.cfg.strategy.timeframe, self.cfg.data.history_bars
@@ -161,6 +188,8 @@ class LiveTrader:
 
         outcomes: List[BarOutcome] = []
         self.last_tick = datetime.now(timezone.utc)
+        if self.cfg.strategy.min_strength_agreement > 0:
+            self._refresh_strength()
 
         with self._lock:
             for sym in self.symbols:
@@ -184,7 +213,8 @@ class LiveTrader:
 
                 self.data[sym] = df
                 strategy = self.strategies[sym]
-                strategy.prepare(df, resample(df, self.cfg.strategy.htf_timeframe))
+                strategy.prepare(df, resample(df, self.cfg.strategy.htf_timeframe),
+                                 strength=self.strength, symbol=sym)
                 self._last_bar[sym] = closed_index
                 self.bars_processed += 1
 

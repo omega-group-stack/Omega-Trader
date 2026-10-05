@@ -30,7 +30,7 @@ currencies {USD, EUR, GBP, JPY, CHF, AUD, NZD, CAD}, define a strength score
 as the average trailing log return of every pair containing it, signed
 positive when it is the base currency and negative when it is the quote. The
 cross-sectional signal for a pair is then `strength(base) - strength(quote)`,
-standardised across the cross-section.
+normalised per pair in the time dimension (see the amendment below).
 
 This is the currency-momentum factor documented by Menkhoff, Sarno,
 Schmeling & Schrimpf (2012), applied as a confirmation filter rather than as
@@ -98,3 +98,47 @@ If H3 fails, the conclusion is that cross-sectional confirmation does not
 rescue an indicator ensemble, the feature stays in the codebase behind a
 default-off flag, and BACKTEST.md records the negative result. No re-running
 with a widened grid.
+
+
+---
+
+## Amendment 1 — normalisation (recorded before any result was produced)
+
+As originally written above, "standardised across the cross-section" meant
+z-scoring the finished per-currency scores at each timestamp. While writing
+the unit tests — and **before running a single backtest cell** — that
+definition turned out to be wrong for the stated purpose.
+
+Per-timestamp z-scoring rescales every timestamp to unit dispersion. The
+consequence: "EUR rose against all seven counterparts" and "EUR rose against
+one counterpart while nothing else moved" receive the **same** score. The
+breadth of a move is precisely the information this experiment claims to add
+over the single-pair signal, and that normalisation divides it out. The test
+`test_an_idiosyncratic_move_does_not_produce_a_strong_score` failed, which is
+how it was caught.
+
+**Amended definition.** Each pair's trailing log return is divided by that
+pair's own trailing volatility (rolling, causal, 500 bars, min 20, clipped to
+±5 so one dislocated pair cannot veto the whole book). The scaled returns are
+then averaged per currency, and the cross-section is centred to sum to zero.
+Centring is kept — it is a relative statement and does not destroy breadth —
+but the division by cross-sectional spread is removed. Regime comparability,
+the original reason for standardising, is preserved by the per-pair volatility
+scaling, verified by
+`test_the_same_shape_of_move_scores_the_same_in_calm_and_volatile_regimes`.
+
+Units change from "cross-sectional standard deviations" to "average number of
+typical moves", both of order ±1. **The pre-registered grid
+`min_strength_agreement ∈ {0.0, 0.3, 0.6}` is left exactly as it was**, since
+no result has been observed and the scale is comparable.
+
+A second expectation also proved false and is recorded here so it is not
+quietly dropped: enabling a veto-only filter does **not** reliably reduce the
+backtest trade count. Vetoing an early entry changes the equity path, which
+changes when cooldowns and the drawdown kill switch fire; a filtered run that
+dodges an early halt can take more trades than the unfiltered one (measured:
+90 versus 72 on synthetic data). The guarantee holds at the signal level only
+— filtered entry signals are a strict subset of unfiltered ones — and that is
+what the test asserts. **Trade count is therefore not usable as a sanity
+check on whether the filter is active**; per-trade R is the metric of record,
+as already specified.

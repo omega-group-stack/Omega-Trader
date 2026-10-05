@@ -73,6 +73,8 @@ class Backtester:
         specs: Dict[str, SymbolSpec] = {}
         strategies: Dict[str, EnsembleStrategy] = {}
 
+        strength = self._strength_frame(symbols)
+
         for sym in symbols:
             df = self._load(sym)
             if len(df) <= cfg.strategy.warmup_bars + 10:
@@ -82,7 +84,9 @@ class Backtester:
                 )
             spec = self._spec_for(sym)
             htf = resample(df, cfg.strategy.htf_timeframe)
-            strategy = EnsembleStrategy(cfg.strategy, spec).prepare(df, htf)
+            strategy = EnsembleStrategy(cfg.strategy, spec).prepare(
+                df, htf, strength=strength, symbol=sym
+            )
             strategy.max_spread_points = self._max_spread(sym)  # type: ignore[attr-defined]
 
             data[sym] = df
@@ -188,6 +192,43 @@ class Backtester:
     def _journal(journal: List[str], outcome: BarOutcome) -> None:
         for action in outcome.actions:
             journal.append(f"{outcome.time:%Y-%m-%d %H:%M} | {outcome.symbol} | {action}")
+
+    def _strength_frame(self, symbols) -> Optional[pd.DataFrame]:
+        """Build the cross-sectional strength basket, or None when disabled.
+
+        Deliberately loads the basket through the same feed and the same date
+        window as the traded symbols, so a backtest cannot accidentally see
+        cross-sectional data from outside its own period.
+        """
+        cfg = self.cfg
+        if cfg.strategy.min_strength_agreement <= 0:
+            return None
+
+        basket = list(dict.fromkeys(
+            [s.upper() for s in cfg.strategy.strength_basket] +
+            [s.upper() for s in symbols]
+        ))
+        closes = {}
+        for sym in basket:
+            try:
+                frame = self._load(sym)
+            except Exception as exc:
+                log.warning("strength basket: %s unavailable (%s)", sym, exc)
+                continue
+            if frame is not None and not frame.empty:
+                closes[sym] = frame["close"]
+
+        from ..strategy.strength import build_strength
+
+        frame = build_strength(closes, cfg.strategy.strength_lookback,
+                               cfg.strategy.strength_smooth)
+        if frame.empty:
+            log.warning("Currency-strength filter is enabled but the basket is "
+                        "empty — the filter will have no effect.")
+            return None
+        log.info("Currency strength: %d pairs -> %d currencies",
+                 len(closes), len(frame.columns))
+        return frame
 
     def _load(self, symbol: str) -> pd.DataFrame:
         cfg = self.cfg

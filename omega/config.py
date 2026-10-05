@@ -177,6 +177,14 @@ class StrategyConfig:
     min_confidence: float = 0.45        # [0,1] agreement filter
     min_agreeing_blocks: int = 3        # how many blocks must agree on sign
     require_htf_alignment: bool = True
+    # Cross-sectional currency-strength confirmation (see strategy/strength.py).
+    # 0 disables it. Requires strength_basket pairs to be available in the feed.
+    min_strength_agreement: float = 0.0
+    strength_lookback: int = 24        # bars used for the trailing return
+    strength_smooth: int = 3           # smoothing applied to the raw scores
+    strength_basket: List[str] = field(default_factory=lambda: [
+        "EURUSD", "GBPUSD", "AUDUSD", "NZDUSD", "USDCAD", "USDCHF", "USDJPY",
+    ])
     allow_longs: bool = True
     allow_shorts: bool = True
     allow_pyramiding: bool = False
