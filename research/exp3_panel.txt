@@ -1,0 +1,43 @@
+Experiment 3 — confirmation panel, six majors used for no decision.
+Frozen: H1, ECN costs, entry_threshold 0.70, atr_stop_mult 2.0.
+Filtered arm: strength_lookback 24, min_strength_agreement 0.6.
+Reproduce: LB=24 AG=0.6 bash research/exp3_confirm.sh && .venv/bin/python research/exp3_stats.py
+
+pair      n off    R off   n on     R on    delta       t       p
+----------------------------------------------------------------
+GBPUSD      515  +0.1097    495  +0.1233  +0.0136   +0.19   0.850
+AUDUSD      400  +0.1683    395  +0.1530  -0.0153   -0.19   0.847
+NZDUSD      368  +0.0564    363  +0.0614  +0.0050   +0.06   0.951
+USDCAD      479  +0.0661    457  +0.0788  +0.0126   +0.17   0.861
+USDCHF      487  +0.1386    463  +0.1740  +0.0354   +0.49   0.624
+USDJPY      482  +0.1233    447  +0.1210  -0.0023   -0.03   0.975
+----------------------------------------------------------------
+POOLED     2731  +0.1110   2620  +0.1200  +0.0090   +0.29   0.769
+positive on 4/6 pairs,  dof 5339
+PRE-REGISTERED VERDICT: FAILURE
+
+Baseline, unweighted mean R vs risk-weighted (sum P&L / sum risked):
+pair         n   mean R   $-wtd R      gap    PF     ret%   maxDD
+GBPUSD     514  +0.1099   +0.0146  -0.0954  1.03     +5.9   18.36
+AUDUSD     400  +0.1683   +0.0772  -0.0911  1.17    +28.8    8.81
+NZDUSD     368  +0.0564   -0.0780  -0.1344  0.85    -20.5   21.93
+USDCAD     479  +0.0661   -0.0814  -0.1475  0.84    -26.9   31.61
+USDCHF     487  +0.1386   +0.0207  -0.1179  1.04     +9.9   18.23
+USDJPY     469  +0.1267   -0.0115  -0.1382  0.98     -4.5   21.46
+--------------------------------------------------------------
+mean            +0.1110   -0.0097
+clustered by pair: mean -0.0097R, sd 0.0614, t = -0.39 on 5 dof
+
+Quintiles by money-at-risk, ranked within each pair then pooled:
+quintile      n   mean R   $-wtd R    total $   win%
+Q1          540  +0.7367   +0.6000     +13790   73.9
+Q2          540  +0.1586   +0.1565      +5497   53.1
+Q3          540  +0.0053   +0.0016        +65   49.3
+Q4          540  -0.1390   -0.1268      -6821   41.3
+Q5          557  -0.1941   -0.1853     -13252   40.9
+
+Rejected explanations:
+  by stop width (2xATR/price): +0.124 +0.108 +0.169 +0.069 +0.089  (no pattern)
+  by |entry_score|:            +0.056 +0.089 +0.140 +0.085 +0.185  (not inverted)
+  outcome autocorrelation:     +0.186R after a win, +0.031R after a loss
+                               (de-risking after losses helps, so it is not the cause)

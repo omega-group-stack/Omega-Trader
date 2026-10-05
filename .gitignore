@@ -34,3 +34,5 @@ config/*.local.yaml
 .DS_Store
 .idea/
 .vscode/
+research/exp3/
+research/wf3_*.json

@@ -54,6 +54,9 @@ class Performance:
     profit_factor: float = 0.0
     expectancy: float = 0.0
     expectancy_r: float = 0.0
+    #: Risk-weighted expectancy: total P&L divided by total money risked.
+    #: This is what the account actually earned per unit of risk taken.
+    expectancy_r_weighted: float = 0.0
     payoff_ratio: float = 0.0
     avg_win: float = 0.0
     avg_loss: float = 0.0
@@ -91,7 +94,9 @@ class Performance:
             f"Trades          : {self.trades}  "
             f"(W {self.wins} / L {self.losses}, {self.win_rate_pct:.1f}% win rate)",
             f"Profit factor   : {self.profit_factor:.2f}",
-            f"Expectancy      : {self.expectancy:,.2f} per trade  ({self.expectancy_r:+.3f}R)",
+            f"Expectancy      : {self.expectancy:,.2f} per trade  "
+            f"({self.expectancy_r:+.3f}R unweighted, "
+            f"{self.expectancy_r_weighted:+.3f}R risk-weighted)",
             f"Payoff ratio    : {self.payoff_ratio:.2f}  "
             f"(avg win {self.avg_win:,.2f} / avg loss {self.avg_loss:,.2f})",
             f"Best / worst    : {self.largest_win:,.2f} / {self.largest_loss:,.2f}",
@@ -189,6 +194,27 @@ def analyse(
     r_values = np.array([t.r_multiple for t in trades], dtype=float)
     perf.avg_r = round(float(r_values.mean()), 3)
     perf.expectancy_r = perf.avg_r
+
+    # Risk-weighted expectancy = sum(P&L) / sum(money risked).
+    #
+    # expectancy_r above is an UNWEIGHTED mean of per-trade R, which silently
+    # assumes every trade risked the same amount. Under percent-of-equity
+    # sizing it never does, and the difference is not academic: on the
+    # six-pair out-of-sample panel of experiment 3 the unweighted mean was
+    # +0.111R while this number was -0.010R, because losing trades were
+    # consistently 9-26% larger than winning ones. One says there is an edge;
+    # the other says the account went nowhere, and the account is right.
+    #
+    # Report both. When they disagree, believe this one.
+    risked = np.array(
+        [abs(t.pnl / t.r_multiple) for t in trades if t.r_multiple],
+        dtype=float,
+    )
+    matched = np.array([t.pnl for t in trades if t.r_multiple], dtype=float)
+    total_risked = float(risked.sum())
+    perf.expectancy_r_weighted = (
+        round(float(matched.sum() / total_risked), 3) if total_risked > 0 else 0.0
+    )
     if len(pnls) > 1 and pnls.std(ddof=1) > 0:
         perf.sqn = round(float(math.sqrt(len(pnls)) * pnls.mean() / pnls.std(ddof=1)), 3)
     perf.total_commission = round(float(sum(t.commission for t in trades)), 2)

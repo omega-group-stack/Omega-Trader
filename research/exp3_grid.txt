@@ -1,0 +1,14 @@
+Experiment 3 — development grid, EURUSD, walk-forward to 2021-09, 17-pair basket.
+Reproduce: bash research/exp3.sh
+
+cell            eff   cons    rank  trades    exp_r     ret%   maxDD    PF   win%
+---------------------------------------------------------------------------------
+lb24_ag00      0.28   0.90  0.2511     345  +0.2120   +42.01    8.41  1.28   55.4
+lb72_ag00      0.28   0.90  0.2511     345  +0.2120   +42.01    8.41  1.28   55.4
+lb24_ag06      0.25   1.00  0.2490     326  +0.2260   +46.83    7.74  1.31   56.4
+lb72_ag06      0.27   0.90  0.2457     332  +0.2190   +40.34   10.26  1.27   55.7
+lb24_ag03      0.24   1.00  0.2400     341  +0.2170   +43.58    8.38  1.29   55.4
+lb72_ag03      0.25   0.90  0.2268     339  +0.1950   +33.75   10.27  1.23   54.6
+
+The two ag=0.0 cells are the filter switched off and are byte-identical, which
+is the intended determinism check. rank_score selects the filter OFF.

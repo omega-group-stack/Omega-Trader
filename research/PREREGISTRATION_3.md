@@ -233,3 +233,113 @@ and the improvement on the metric of record is +0.014R against a +0.05R
 success bar. **H3 is expected to fail.** The panel is run anyway, because the
 point of pre-registration is to publish the answer you get, not the one you
 hoped for.
+
+---
+
+# Results
+
+Run once, as specified. No re-runs, no widened grid.
+
+## H3 — the pre-registered test
+
+Frozen configuration `strength_lookback=24, min_strength_agreement=0.6`
+against the unfiltered baseline, on the six majors used for no decision.
+Welch t-test on per-trade R, filtered minus unfiltered:
+
+| pair | n off | R off | n on | R on | delta | t | p |
+|---|---|---|---|---|---|---|---|
+| GBPUSD | 515 | +0.1097 | 495 | +0.1233 | +0.0136 | +0.19 | 0.850 |
+| AUDUSD | 400 | +0.1683 | 395 | +0.1530 | −0.0153 | −0.19 | 0.847 |
+| NZDUSD | 368 | +0.0564 | 363 | +0.0614 | +0.0050 | +0.06 | 0.951 |
+| USDCAD | 479 | +0.0661 | 457 | +0.0788 | +0.0126 | +0.17 | 0.861 |
+| USDCHF | 487 | +0.1386 | 463 | +0.1740 | +0.0354 | +0.49 | 0.624 |
+| USDJPY | 482 | +0.1233 | 447 | +0.1210 | −0.0023 | −0.03 | 0.975 |
+| **POOLED** | **2731** | **+0.1110** | **2620** | **+0.1200** | **+0.0090** | **+0.29** | **0.769** |
+
+Positive on 4 of 6 pairs. Improvement +0.009R against a +0.05R bar, p = 0.77.
+
+**H3 is FALSIFIED.** Cross-sectional currency strength does not improve this
+ensemble. The feature stays in the codebase behind `min_strength_agreement`,
+default `0.0` (off). No further variants will be tried.
+
+The sample-size problem that killed experiment 2 is solved — 5,351 trades
+instead of 35 — and the answer it returns is a clean no.
+
+## The finding that matters more
+
+Setting the filter aside, the baseline itself was run on six pairs that
+never informed any tuning decision. Two different ways of summarising the
+same 2,717 trades:
+
+| pair | n | mean R (unweighted) | risk-weighted R | PF | return | maxDD |
+|---|---|---|---|---|---|---|
+| GBPUSD | 514 | +0.1099 | +0.0146 | 1.03 | +5.9% | 18.4% |
+| AUDUSD | 400 | +0.1683 | +0.0772 | 1.17 | +28.8% | 8.8% |
+| NZDUSD | 368 | +0.0564 | −0.0780 | 0.85 | −20.5% | 21.9% |
+| USDCAD | 479 | +0.0661 | −0.0814 | 0.84 | −26.9% | 31.6% |
+| USDCHF | 487 | +0.1386 | +0.0207 | 1.04 | +9.9% | 18.2% |
+| USDJPY | 469 | +0.1267 | −0.0115 | 0.98 | −4.5% | 21.5% |
+| **mean** | | **+0.1110** | **−0.0097** | | | |
+
+Unweighted, clustered by pair: t = +6.31 on 5 dof, p ≈ 0.0015 — apparently a
+real edge. Risk-weighted: **−0.0097R, t = −0.39. Nothing.**
+
+`expectancy_r` is an unweighted mean of per-trade R. It assumes every trade
+risked the same amount. Under percent-of-equity sizing it never does, and
+here losing trades were **9% to 26% larger than winning ones on all six
+pairs**. Quintiles by money-at-risk, computed within each pair and then
+pooled:
+
+| quintile | n | mean R | risk-weighted | total P&L | win rate |
+|---|---|---|---|---|---|
+| Q1 smallest | 540 | +0.7367 | +0.6000 | +$13,790 | 73.9% |
+| Q2 | 540 | +0.1586 | +0.1565 | +$5,497 | 53.1% |
+| Q3 | 540 | +0.0053 | +0.0016 | +$65 | 49.3% |
+| Q4 | 540 | −0.1390 | −0.1268 | −$6,821 | 41.3% |
+| Q5 largest | 557 | −0.1941 | −0.1853 | −$13,252 | 40.9% |
+
+Perfectly monotone: the system wins on its smallest bets and loses on its
+biggest, and the two cancel.
+
+Three candidate explanations were tested and **rejected**:
+
+- *Volatility.* Bucketing by stop width (2×ATR as a share of price) gives
+  +0.124 / +0.108 / +0.169 / +0.069 / +0.089 — no pattern.
+- *Model conviction.* Bucketing by `|entry_score|` gives +0.056 / +0.089 /
+  +0.140 / +0.085 / +0.185 — weakly positive if anything, not inverted.
+- *De-risking after losses.* Trade outcomes are positively autocorrelated
+  (+0.186R after a win, +0.031R after a loss, n = 2,711), so cutting size
+  after a losing streak helps rather than hurts.
+
+What remains is the equity path: size is proportional to equity, outcomes
+cluster, and the account is therefore largest just as a winning cluster
+breaks. Whatever the mechanism, the operational conclusion does not depend
+on it — **R-multiples are not spendable.**
+
+`Performance.expectancy_r_weighted` (= Σ P&L / Σ money risked) is now
+computed and printed alongside `expectancy_r` everywhere. When the two
+disagree, the weighted one is right.
+
+## Bugs found while running this experiment
+
+1. **Majors-only basket** (Amendment 2) — methodological; the cross-section
+   could not measure breadth at all.
+2. **Notional for USD-base pairs.** `margin = lots × contract_size × price ×
+   margin_rate` is only correct when the quote currency is the account
+   currency. One lot of USDJPY is already 100,000 USD, so multiplying by the
+   JPY price overstated margin 114×, the margin guard capped the position,
+   and USDJPY traded at **0.05% risk instead of 1%** — lots pinned at 0.02
+   regardless of stop distance — across all 482 trades of the first panel
+   run. Fixed via `SymbolSpec.notional_per_lot`, and the panel was re-run.
+3. **All-zero price file.** AUDCHF downloaded as zeros stamped 1970-01-01.
+   `log(0) = -inf` would have propagated through the cross-section and
+   vetoed every trade on every pair, silently. `build_strength` now rejects
+   empty, constant and non-positive series.
+
+## Standing conclusion after three experiments
+
+There is still no demonstrated edge. Experiment 2 ended at p = 0.45 on 35
+trades; experiment 3 bought the sample size and the answer came back
+risk-weighted −0.01R on 2,717 out-of-sample trades. The honest summary is
+that this ensemble, at these costs, does not make money, and the previously
+quoted R-expectancies overstated it by roughly 0.12R per trade.
