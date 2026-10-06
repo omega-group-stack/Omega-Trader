@@ -81,13 +81,42 @@ jobs:
             Tee-Object -Variable out
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            foreach ($line in ($out | Select-Object -Last 9)) {
+            # Annotations are capped per level per step, and an exception
+            # chain buries its root cause at the top while the symptom sits
+            # at the bottom. Report both ends, in different buckets.
+            $head = $out |
+              Where-Object { "$_" -match "(?i)error|cannot|failed|DLL|No module" } |
+              Select-Object -First 8
+            foreach ($line in $head) {
               $clean = ("$line" -replace "`r", "").Trim()
-              if ($clean) { Write-Host "::error::$clean" }
+              if ($clean) { Write-Host "::error::ROOT $clean" }
+            }
+            foreach ($line in ($out | Select-Object -Last 8)) {
+              $clean = ("$line" -replace "`r", "").Trim()
+              if ($clean) { Write-Host "::warning::TAIL $clean" }
             }
             Write-Host "::error::packaged app failed its self-test (exit $code)"
             exit 1
           }
+
+      - name: Show what actually landed in the bundle
+        if: failure()
+        shell: pwsh
+        # When an import fails inside the bundle, the first question is
+        # always whether the package is in there at all.
+        run: |
+          foreach ($pkg in @("numpy", "pandas", "uvicorn", "omega")) {
+            $hit = Get-ChildItem -Path "dist\OmegaTrader\_internal" -Filter $pkg -Recurse -Directory -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if ($hit) {
+              $n = (Get-ChildItem $hit.FullName -Recurse -File).Count
+              Write-Host "::error::BUNDLE $pkg -> $($hit.FullName) ($n files)"
+            } else {
+              Write-Host "::error::BUNDLE $pkg -> MISSING"
+            }
+          }
+          $dlls = (Get-ChildItem "dist\OmegaTrader\_internal" -Filter "*.dll" -File -ErrorAction SilentlyContinue).Count
+          Write-Host "::error::BUNDLE top-level dlls: $dlls"
 
       - name: Check first run created a usable settings folder
         shell: pwsh
