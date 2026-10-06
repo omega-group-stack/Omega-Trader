@@ -42,7 +42,23 @@ jobs:
           pip install MetaTrader5
 
       - name: Run the test suite
-        run: pytest -q
+        shell: pwsh
+        # Failures are echoed back as workflow annotations as well as log
+        # lines: the raw logs live behind a storage host that is not always
+        # reachable, but annotations come back over the plain REST API.
+        run: |
+          pytest -q --tb=line -p no:randomly 2>&1 | Tee-Object -Variable out
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $interesting = $out |
+              Where-Object { $_ -match "(?i)^(FAILED|ERROR)|short test summary|^E |Error: |\.py:\d+:" } |
+              Select-Object -Last 9
+            foreach ($line in $interesting) {
+              $clean = ($line -replace "`r", "").Trim()
+              if ($clean) { Write-Host "::error::$clean" }
+            }
+            exit $code
+          }
 
       - name: Resolve version
         id: version
