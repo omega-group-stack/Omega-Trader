@@ -15,7 +15,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from ..core.types import Trade
+from ..core.types import CloseReason, Trade
 
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 
@@ -57,6 +57,15 @@ class Performance:
     #: Risk-weighted expectancy: total P&L divided by total money risked.
     #: This is what the account actually earned per unit of risk taken.
     expectancy_r_weighted: float = 0.0
+    #: Distinct positions, i.e. trade records with partial exits merged back
+    #: into the position they came from. ``trades`` counts records.
+    positions: int = 0
+    #: How many of those records are partial take-profits.
+    partial_exits: int = 0
+    #: Mean R over raw records. Biased upward whenever partial exits exist,
+    #: because a winner can produce two records and a loser only one. Kept
+    #: visible so the size of the bias can be seen rather than guessed at.
+    expectancy_r_per_record: float = 0.0
     payoff_ratio: float = 0.0
     avg_win: float = 0.0
     avg_loss: float = 0.0
@@ -95,7 +104,7 @@ class Performance:
             f"(W {self.wins} / L {self.losses}, {self.win_rate_pct:.1f}% win rate)",
             f"Profit factor   : {self.profit_factor:.2f}",
             f"Expectancy      : {self.expectancy:,.2f} per trade  "
-            f"({self.expectancy_r:+.3f}R unweighted, "
+            f"({self.expectancy_r:+.3f}R per position, "
             f"{self.expectancy_r_weighted:+.3f}R risk-weighted)",
             f"Payoff ratio    : {self.payoff_ratio:.2f}  "
             f"(avg win {self.avg_win:,.2f} / avg loss {self.avg_loss:,.2f})",
@@ -105,6 +114,13 @@ class Performance:
             f"Costs           : commission {self.total_commission:,.2f}, "
             f"swap {self.total_swap:,.2f}",
         ]
+        if self.partial_exits:
+            lines.append(
+                f"Positions       : {self.positions}  "
+                f"({self.partial_exits} of the {self.trades} records are partial "
+                f"exits; per-record R would read "
+                f"{self.expectancy_r_per_record:+.3f} and is biased upward)"
+            )
         if self.by_reason:
             reasons = ", ".join(f"{k}={v}" for k, v in sorted(self.by_reason.items()))
             lines.append(f"Exit reasons    : {reasons}")
@@ -193,7 +209,29 @@ def analyse(
     )
     r_values = np.array([t.r_multiple for t in trades], dtype=float)
     perf.avg_r = round(float(r_values.mean()), 3)
-    perf.expectancy_r = perf.avg_r
+
+    # Per-POSITION R, which is what "expectancy per trade" has to mean.
+    #
+    # A position that takes a partial profit writes two records: the partial
+    # at roughly +1.5R and the remainder at whatever it finally gets. A
+    # position that runs straight into its stop writes one record at -1R. So
+    # winners are counted twice and losers once, and the unweighted mean over
+    # *records* is biased upward by construction -- it is a selection effect
+    # in the row count, not a property of the trades.
+    #
+    # Measured on the six-pair panel of experiment 3: +0.111R per record
+    # (t=+6.31, apparently a real edge) versus +0.016R per position (t=+0.91,
+    # nothing). 6.6% of positions took a partial and they supplied 86% of the
+    # apparent edge. See research/PREREGISTRATION_4.md.
+    positions = _positions(trades)
+    perf.positions = len(positions)
+    perf.partial_exits = sum(
+        1 for t in trades if t.reason is CloseReason.PARTIAL_TP
+    )
+    perf.expectancy_r_per_record = perf.avg_r
+
+    pos_r = [r for r in (_position_r(g) for g in positions) if r is not None]
+    perf.expectancy_r = round(float(np.mean(pos_r)), 3) if pos_r else 0.0
 
     # Risk-weighted expectancy = sum(P&L) / sum(money risked).
     #
@@ -229,6 +267,45 @@ def analyse(
 # --------------------------------------------------------------------------- #
 # Internals
 # --------------------------------------------------------------------------- #
+def _positions(trades: Sequence[Trade]) -> List[List[Trade]]:
+    """Group trade records into the positions that produced them.
+
+    Only does anything when partial take-profits are present; with no
+    partials every record is already its own position, and grouping by
+    ticket then risks merging unrelated rows should a broker ever recycle
+    ticket numbers.
+    """
+    if not any(t.reason is CloseReason.PARTIAL_TP for t in trades):
+        return [[t] for t in trades]
+
+    groups: Dict[Tuple[str, int], List[Trade]] = {}
+    order: List[Tuple[str, int]] = []
+    for t in trades:
+        key = (t.symbol, t.ticket)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(t)
+    return [groups[k] for k in order]
+
+
+def _position_r(group: Sequence[Trade]) -> Optional[float]:
+    """Total P&L of a position over the money it actually had at risk.
+
+    Each record's share of the risk is recovered from its own R, so a half
+    position that exited early contributes half the risk -- summing them
+    reconstitutes the whole.
+    """
+    pnl = 0.0
+    risk = 0.0
+    for t in group:
+        if not t.r_multiple:
+            continue
+        pnl += t.pnl
+        risk += abs(t.pnl / t.r_multiple)
+    return pnl / risk if risk > 0 else None
+
+
 def _curve_frame(curve: Sequence[Tuple[datetime, float, float]]) -> pd.DataFrame:
     if not curve:
         return pd.DataFrame(columns=["equity", "balance"])

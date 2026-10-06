@@ -1,0 +1,53 @@
+2717 trades across 6 pairs
+  unweighted mean R      : +0.1116
+  risk-weighted (P&L/risk): -0.0032
+
+=== 1. where does size variation come from? ===
+  sd(log money_at_risk)      = 0.4319
+  sd(log realised_risk_frac) = 0.4020
+  ratio sd(log f)/sd(log risk) = 0.931   [H4-A if < 0.500]
+
+=== 2. quintiles ===
+
+by raw money at risk (the original finding)
+   q     n    mean R   win%         P&L                    range
+  Q1   543   +0.7263   73.1      +13467   [12.104, 55.369]
+  Q2   543   +0.1523   54.5       +5335   [55.451, 70]
+  Q3   544   -0.0258   46.3       -1111   [70, 84.384]
+  Q4   543   -0.1773   40.3       -9867   [84.394, 117.15]
+  Q5   544   -0.1169   43.9       -8544   [117.23, 165.86]
+  Q1 - Q5 spread: +0.8432R
+
+by realised risk fraction (equity divided out)
+   q     n    mean R   win%         P&L                    range
+  Q1   543   +0.6900   71.1      +12473   [0.0014585, 0.005417]
+  Q2   543   +0.2600   58.6       +9250   [0.0054173, 0.0071869]
+  Q3   544   -0.1058   43.8       -4614   [0.0071873, 0.0077076]
+  Q4   543   -0.1713   40.3       -9805   [0.0077188, 0.01208]
+  Q5   544   -0.1142   44.5       -8024   [0.01208, 0.013935]
+  Q1 - Q5 spread: +0.8043R
+
+by year-detrended money at risk
+   q     n    mean R   win%         P&L                    range
+  Q1   543   +0.7555   74.4      +14386   [0.15359, 0.73487]
+  Q2   543   +0.1099   52.1       +3927   [0.73504, 0.93288]
+  Q3   544   +0.0064   48.3        +231   [0.93397, 1.1275]
+  Q4   543   -0.2029   38.7      -11209   [1.1283, 1.5549]
+  Q5   544   -0.1104   44.7       -8054   [1.555, 2.3481]
+  Q1 - Q5 spread: +0.8659R
+
+=== 3. detrended spread, per pair (clustered) ===
+  GBPUSD: +0.8071R
+  AUDUSD: +0.7113R
+  NZDUSD: +1.3073R
+  USDCAD: +1.1411R
+  USDCHF: +0.8594R
+  USDJPY: +1.0106R
+  mean +0.9728R  t=+10.65  p=0.0001
+
+=== 4. pre-registered decision ===
+  dispersion rule  : sd ratio 0.931 < 0.5 -> not H4-A
+  spread rule      : detrended +0.8659R < +0.2811R -> not H4-A
+  H4-B (within-period): |f spread| 0.8043 >= 0.20 and p 0.0001 < 0.05 -> H4-B present
+
+  VERDICT: a within-period sizing channel is also harmful.
