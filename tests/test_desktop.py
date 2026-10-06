@@ -79,27 +79,51 @@ def test_bundled_file_returns_none_when_missing():
 # Ports
 # --------------------------------------------------------------------------- #
 def test_free_port_returns_something_bindable():
-    """Bind the way uvicorn does, i.e. with SO_REUSEADDR.
+    """Bind the probe exactly as the real server will.
 
-    Without it this test is stricter than production and fails on a port
-    merely left in TIME_WAIT by an earlier run -- a state uvicorn binds
-    over quite happily.
+    Hand-rolling the socket options here would make the test disagree with
+    production on one platform or the other -- which is the whole subtlety
+    the helper exists to absorb.
     """
     port = desktop.free_port()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        desktop._probe_bind(probe)
         probe.bind((desktop.HOST, port))
 
 
 def test_free_port_steps_over_a_port_already_in_use():
-    """Users relaunch without closing the old window. That must still work."""
+    """Users relaunch without closing the old window. That must still work.
+
+    This is the case that caught a real Windows bug: SO_REUSEADDR there
+    permits binding over a live listener, so a probe that set it reported
+    the busy port as free and uvicorn then failed to start.
+    """
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as taken:
-        taken.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        desktop._probe_bind(taken)
         taken.bind((desktop.HOST, 0))
         busy = taken.getsockname()[1]
         taken.listen(1)
 
         assert desktop.free_port(preferred=busy) != busy
+
+
+def test_the_port_probe_never_steals_a_live_listener():
+    """Guards the platform-specific socket options directly.
+
+    If someone "simplifies" _probe_bind to an unconditional SO_REUSEADDR,
+    this fails on Windows -- where that flag means the opposite of what it
+    means everywhere else.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as live:
+        desktop._probe_bind(live)
+        live.bind((desktop.HOST, 0))
+        port = live.getsockname()[1]
+        live.listen(1)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as intruder:
+            desktop._probe_bind(intruder)
+            with pytest.raises(OSError):
+                intruder.bind((desktop.HOST, port))
 
 
 def test_free_port_gives_up_loudly_rather_than_returning_garbage():

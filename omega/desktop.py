@@ -100,17 +100,50 @@ def ensure_home() -> Path:
 # --------------------------------------------------------------------------- #
 # Networking
 # --------------------------------------------------------------------------- #
+def _probe_bind(sock: socket.socket) -> None:
+    """Give a probe socket the same bind semantics the real server will get.
+
+    SO_REUSEADDR means two opposite things depending on the platform, and
+    getting this wrong breaks the feature in one direction or the other:
+
+    * On POSIX it means "ignore a lingering TIME_WAIT". asyncio sets it for
+      every server it opens, so a probe *without* it is stricter than the
+      real thing: it rejects a perfectly usable port left over from the run
+      the user just closed, and we move the dashboard to 8766 for no reason.
+
+    * On Windows it means "let me steal this address", and a bind with it set
+      succeeds even against a socket that is actively listening. A probe
+      *with* it is therefore more permissive than the real thing: it reports
+      the port the still-running old instance is serving on as free, and
+      uvicorn -- which does not set it there, because asyncio refuses to --
+      then dies with "only one usage of each socket address is permitted".
+
+    So: set it only where asyncio sets it. On Windows ask for the strict
+    behaviour explicitly instead.
+    """
+    if os.name == "nt":
+        exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+        if exclusive is not None:
+            sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+    else:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+
 def free_port(preferred: int = DEFAULT_PORT, attempts: int = 50) -> int:
     """First free TCP port at or after ``preferred``.
 
     Users relaunch the app without noticing the old one is still running, and
     "[Errno 98] address already in use" is not an acceptable thing to show
     them.
+
+    There is an unavoidable gap between this probe and uvicorn's own bind; it
+    is only a problem if something else on the machine claims the same port
+    in those few milliseconds.
     """
     for offset in range(attempts):
         candidate = preferred + offset
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            _probe_bind(sock)
             try:
                 sock.bind((HOST, candidate))
                 return candidate

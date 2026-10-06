@@ -458,7 +458,7 @@ omega/
 </div>
 
 ```bash
-pytest -q          # ۲۹۴ تست
+pytest -q          # ۲۹۵ تست
 ```
 
 <div dir="rtl">
