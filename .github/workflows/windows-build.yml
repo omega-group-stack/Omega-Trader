@@ -77,9 +77,15 @@ jobs:
         # it bring up the trader and the web server, and probe the HTTP API.
         run: |
           $env:OMEGA_HOME = "$env:RUNNER_TEMP\omega-selftest"
-          & "dist\OmegaTrader\OmegaTrader.exe" --selftest --no-browser
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "packaged app failed its self-test (exit $LASTEXITCODE)"
+          & "dist\OmegaTrader\OmegaTrader.exe" --selftest --no-browser 2>&1 |
+            Tee-Object -Variable out
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            foreach ($line in ($out | Select-Object -Last 9)) {
+              $clean = ("$line" -replace "`r", "").Trim()
+              if ($clean) { Write-Host "::error::$clean" }
+            }
+            Write-Host "::error::packaged app failed its self-test (exit $code)"
             exit 1
           }
 
