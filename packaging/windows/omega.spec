@@ -36,6 +36,17 @@ hiddenimports = [
 # Strategy blocks, indicators and feeds are selected from config by name.
 hiddenimports += collect_submodules("omega")
 
+# Belt and braces over PyInstaller's own numpy/pandas hooks. Both packages
+# reach their C extensions through lazy, string-based imports, so when a hook
+# falls behind a release the bundle builds cleanly and then fails at launch.
+# Naming the extension subpackages directly costs nothing and does not drag in
+# f2py or distutils the way collecting all of numpy would.
+for _pkg in ("numpy._core", "pandas._libs"):
+    try:
+        hiddenimports += collect_submodules(_pkg)
+    except Exception:  # not present in older releases; the hook covers those
+        pass
+
 # MetaTrader5 only exists on Windows; everywhere else this must not be fatal.
 if sys.platform == "win32":
     hiddenimports.append("MetaTrader5")

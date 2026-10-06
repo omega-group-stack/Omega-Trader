@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 mt5 = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
 dev = ["pytest>=7.4", "httpx>=0.26"]
-build = ["pyinstaller>=6.10"]
+build = ["pyinstaller>=6.22"]  # older hooks mis-collect numpy 2.x
 
 [project.scripts]
 omega = "omega.cli:main"

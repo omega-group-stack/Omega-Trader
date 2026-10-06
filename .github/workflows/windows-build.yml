@@ -36,7 +36,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install pyinstaller==6.11.1
+          # Pinned for reproducible builds, but the pin has to keep pace with
+          # numpy: PyInstaller ships numpy's hook, and 6.11 predates numpy 2.x
+          # moving its C extensions to numpy._core, which made the bundled app
+          # die on launch with "No module named 'numpy._core._exceptions'".
+          pip install pyinstaller==6.22.3
           # Windows-only, so it can only be installed here. If the bundled
           # app is ever pointed at a real terminal, this is what talks to it.
           pip install MetaTrader5
