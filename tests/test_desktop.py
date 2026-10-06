@@ -172,3 +172,37 @@ def test_default_mode_is_paper_not_live():
 
     signature = inspect.signature(desktop.run)
     assert signature.parameters["mode"].default == "paper"
+
+
+# --------------------------------------------------------------------------- #
+# Packaging
+# --------------------------------------------------------------------------- #
+def _repo_root() -> Path:
+    return Path(desktop.__file__).resolve().parents[1]
+
+
+def test_the_frozen_build_starts_from_a_launcher_not_from_a_package_module():
+    """PyInstaller runs its start script as __main__.
+
+    Aim it at omega/desktop.py and that file stops being part of the omega
+    package, so every relative import inside it dies with "attempted
+    relative import with no known parent package" -- at runtime, on the
+    user's machine, with no clue as to why. The spec must point at the
+    standalone launcher instead.
+    """
+    spec = (_repo_root() / "packaging" / "windows" / "omega.spec").read_text()
+
+    analysis = spec.split("a = Analysis(", 1)[1].split(")", 1)[0]
+    assert "entry.py" in analysis
+    assert "desktop.py" not in analysis
+
+
+def test_the_launcher_only_reaches_omega_through_an_absolute_import():
+    launcher = (
+        _repo_root() / "packaging" / "windows" / "entry.py"
+    ).read_text()
+
+    assert "from omega.desktop import main" in launcher
+    # A frozen child process re-executes the exe; without this it would boot
+    # a whole second copy of the app instead of a pool worker.
+    assert "freeze_support()" in launcher

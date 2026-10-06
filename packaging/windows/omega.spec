@@ -49,8 +49,11 @@ datas = [
 
 icon = ROOT / "packaging" / "windows" / "omega.ico"
 
+# Deliberately a launcher module and not omega/desktop.py itself: PyInstaller
+# runs the start script as __main__, which would strip omega.desktop of its
+# package and break every relative import inside it.
 a = Analysis(
-    [str(ROOT / "omega" / "desktop.py")],
+    [str(ROOT / "packaging" / "windows" / "entry.py")],
     pathex=[str(ROOT)],
     binaries=[],
     datas=datas,
