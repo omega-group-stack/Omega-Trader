@@ -1,0 +1,29 @@
+pair      positions    mean R   P&L/risk
+------------------------------------------
+EURUSD           27   -0.0444    -0.1035
+GBPUSD           24   +0.2361    +0.2423
+AUDUSD           19   +0.1161    +0.1340
+NZDUSD           16   -0.6090    -0.6471
+USDCAD           26   +0.2538    +0.2995
+USDCHF           19   -0.0903    -0.1583
+USDJPY           24   +0.1688    +0.0877
+EURGBP           17   -0.1103    -0.0247
+EURJPY           27   -1.2427    -1.2981
+EURCHF           25   -0.4985    -0.4321
+EURAUD           22   +0.0148    +0.0782
+EURCAD           19   -0.4108    -0.4091
+EURNZD           15   -0.2172    -0.0198
+GBPJPY           50   -1.2262    -1.2018
+GBPCHF           19   +0.2269    +0.2600
+GBPAUD           15   +0.2953    +0.2592
+GBPCAD           17   -0.6067    -0.4821
+------------------------------------------
+POOLED          381   -0.3035
+
+clustered across 17 pairs: mean -0.2203R  sd 0.4841  t = -1.88
+positive on 7 of 17 pairs
+
+=== pre-registered verdict (|t| >= 2.24) ===
+  t = -1.88 -> FAILURE. The ensemble is finished.
+
+  trades needed to call -0.3035R different from zero: 62

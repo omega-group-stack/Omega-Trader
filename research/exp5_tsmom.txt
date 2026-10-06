@@ -1,0 +1,32 @@
+17 pairs, 5056 daily bars 2007-07-16 -> 2023-09-11
+pairs: AUDUSD, EURAUD, EURCAD, EURCHF, EURGBP, EURJPY, EURNZD, EURUSD, GBPAUD, GBPCAD, GBPCHF, GBPJPY, GBPUSD, NZDUSD, USDCAD, USDCHF, USDJPY
+
+mean monthly turnover (sum |dw|): 0.4922
+mean gross exposure: 1.41x notional
+
+--- GROSS (no costs) ---
+  months            : 183  (2008-07 -> 2023-09)
+  annualised return : +0.22%
+  annualised vol    : 5.19%
+  Sharpe            : +0.077
+  t-stat of mean    : +0.30
+  max drawdown      : -21.55%
+
+--- NET of retail costs ---
+  months            : 183  (2008-07 -> 2023-09)
+  annualised return : +0.16%
+  annualised vol    : 5.19%
+  Sharpe            : +0.063
+  t-stat of mean    : +0.25
+  max drawdown      : -21.90%
+
+--- split halves (net) ---
+  2008-07..2016-01: mean +0.197%/mo  Sharpe +0.415
+  2016-02..2023-09: mean -0.138%/mo  Sharpe -0.324
+
+=== pre-registered verdict (Bonferroni: |t| >= 2.24) ===
+  net Sharpe >= 0.40 : +0.063  -> False
+  t >= 2.24          : +0.25  -> False
+  both halves > 0    : False
+
+  FAILURE by the pre-registered rule.

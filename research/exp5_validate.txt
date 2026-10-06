@@ -1,0 +1,12 @@
+engine validation (gross Sharpe):
+  TSMOM (the hypothesis)              +0.077
+  TSMOM inverted (must mirror)        -0.084
+  perfect foresight (plumbing)        +5.517
+  random signs (must be ~0)           +0.149
+
+  The hypothesis scores BELOW a coin flip on the same data.
+
+per-pair TSMOM Sharpe (unlevered, gross):
+  best : GBPJPY:+0.46  USDJPY:+0.44  EURCHF:+0.27  EURJPY:+0.19  EURAUD:+0.18  EURUSD:+0.02
+  worst: GBPCHF:-0.13  EURGBP:-0.16  GBPAUD:-0.19  GBPCAD:-0.34  EURCAD:-0.35  USDCHF:-0.51
+  positive on 6 of 17 pairs
