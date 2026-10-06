@@ -1,0 +1,41 @@
+45 months: 2020-01 -> 2023-09
+policy-rate dispersion: min 1.00%  max 5.60%
+
+typical book: long USD/NZD/CAD  short JPY/EUR/CHF
+
+--- decomposition (descriptive) ---
+  interest accrual             +1.68%/yr  Sharpe +4.977  t +9.53
+  spot move                    +0.75%/yr  Sharpe +0.135  t +0.26
+  costs                        -0.01%/yr
+
+--- the portfolio ---
+  gross                        +2.43%/yr  Sharpe +0.441  t +0.84
+  NET of retail costs          +2.42%/yr  Sharpe +0.439  t +0.84
+
+  max drawdown   : -6.65%
+  worst month    : -3.28%  (2020-03)
+  best month     : +3.25%  (2022-10)
+  positive months: 26 of 44
+
+--- 2022-01 onward, max dispersion (descriptive, 21 months) ---
+  net                          +2.49%/yr  Sharpe +0.421  t +0.56
+
+--- engine validation ---
+  long high / short low      +0.441
+  inverted (must mirror)     -0.441
+  random books (should be ~0) +0.089
+
+  95% CI on the annual return: [-3.23%, +8.06%]
+
+  the leverage question (this sample contains no carry crash,
+  so every drawdown below is optimistic):
+     5%/yr needs  2.1x  ->  max drawdown   -13.8%, worst month   -6.8%
+    10%/yr needs  4.1x  ->  max drawdown   -27.5%, worst month  -13.6%
+    20%/yr needs  8.3x  ->  max drawdown   -55.0%, worst month  -27.1%
+
+=== pre-registered verdict (one-sided) ===
+  Sharpe >= 0.50 : +0.439 -> False
+  t >= 1.68      : +0.84 -> False
+
+  FAILURE by the pre-registered rule.
+  (Underpowered by design: 44 months needs Sharpe ~0.92 for t=1.68.)

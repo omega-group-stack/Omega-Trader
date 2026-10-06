@@ -21,7 +21,9 @@ data/cache/
 research/*.json
 research/*.log
 
-# Market data — regenerate with `omega data download`, don't commit megabytes
+# Market data — regenerate with `omega data download`, don't commit megabytes.
+# data/rates/ is deliberately NOT ignored: it is 4 KB of monthly policy rates
+# that experiment 6 depends on, and the upstream repository could vanish.
 data/*.csv
 data/*.hst
 data/*.zip
