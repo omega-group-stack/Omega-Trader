@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 
 from omega.config import AppConfig, SymbolConfig
@@ -80,10 +81,36 @@ def test_equity_curve_matches_the_final_balance(result):
 
 
 def test_backtest_is_reproducible():
-    a = Backtester(base_config(1_500)).run()
-    b = Backtester(base_config(1_500)).run()
+    """Two identical configs must give byte-identical results.
+
+    The synthetic feed anchors its index on the wall clock unless data.end
+    pins it, so without that the two runs can straddle an hour boundary and
+    the session filter then admits a different set of bars. Pinning it is
+    what makes this test meaningful rather than merely usually-green.
+    """
+    def cfg():
+        c = base_config(1_500)
+        c.data.end = "2024-06-01"
+        return c
+
+    a = Backtester(cfg()).run()
+    b = Backtester(cfg()).run()
     assert a.performance.net_profit == b.performance.net_profit
     assert len(a.trades) == len(b.trades)
+
+
+def test_the_synthetic_feed_is_pinned_by_data_end():
+    """Regression for the flake above: same anchor, same timestamps."""
+    from omega.data import build_feed
+
+    def frame():
+        c = base_config(600)
+        c.data.end = "2024-06-01"
+        return build_feed(c).candles("EURUSD", "M15", 600)
+
+    first, second = frame(), frame()
+    assert first.index.equals(second.index)
+    assert first.index[-1] <= pd.Timestamp("2024-06-01", tz="UTC")
 
 
 def test_risk_percent_scales_position_size():

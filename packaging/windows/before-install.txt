@@ -1,0 +1,28 @@
+Omega Trader — please read before installing
+============================================
+
+WHAT THIS IS
+    A multi-indicator Forex trading bot with a web dashboard. It can run a
+    backtest on historical data, trade on paper, or trade a live
+    MetaTrader 5 account.
+
+WHAT IT IS NOT
+    A money machine. Measured on 16 years of real data across seven currency
+    pairs, this strategy's out-of-sample expectancy is approximately zero.
+    The numbers, including the ones that are unflattering, are in
+    BACKTEST.md inside the install folder. Read it before risking anything.
+
+AFTER INSTALLING
+    The app starts in PAPER mode with simulated data, so the first run is
+    safe and needs no broker. Your settings live in:
+
+        %LOCALAPPDATA%\OmegaTrader\config.yaml
+
+    Live trading requires a MetaTrader 5 terminal installed and running on
+    this machine, your account details in that file, and explicitly setting
+    execution.confirm_live to true. That second lock exists on purpose.
+
+RISK
+    Trading leveraged foreign exchange can lose you more than you deposit.
+    This software is provided under the MIT licence, with no warranty of any
+    kind. You alone are responsible for what it does with your money.

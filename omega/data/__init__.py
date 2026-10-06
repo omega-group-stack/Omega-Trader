@@ -29,5 +29,6 @@ def build_feed(cfg: AppConfig) -> DataFeed:
             bars=cfg.data.synthetic_bars,
             stream=cfg.data.synthetic_stream,
             speed=cfg.data.synthetic_speed,
+            anchor=cfg.data.end or None,
         )
     raise ValueError(f"Unknown data.source={cfg.data.source!r} (mt5 | csv | synthetic)")

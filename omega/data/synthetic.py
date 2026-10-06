@@ -50,11 +50,19 @@ class SyntheticFeed(DataFeed):
         bars: int = 6_000,
         stream: bool = False,
         speed: float = 120.0,
+        anchor: str | None = None,
     ) -> None:
         self.seed = seed
         self.bars = bars
         self.stream = stream
         self.speed = max(1.0, float(speed))
+        # Without an anchor the series ends at "now", so two feeds built a
+        # second apart produce different timestamps. The prices are seeded
+        # and identical either way, but the session filter reads hour-of-day
+        # off the index, so a run that straddles an hour boundary can take a
+        # different set of trades. That made test_backtest_is_reproducible
+        # flaky. Set data.end to pin it.
+        self.anchor = anchor or None
         self._cache: dict[tuple[str, str, int], pd.DataFrame] = {}
         self._origin = time.monotonic()
 
@@ -103,7 +111,7 @@ class SyntheticFeed(DataFeed):
         step = tf_minutes(timeframe)
         rng = np.random.default_rng(abs(hash((sym, self.seed))) % (2**32))
 
-        end_ts = pd.Timestamp(end or datetime.now(timezone.utc))
+        end_ts = pd.Timestamp(end or self.anchor or datetime.now(timezone.utc))
         end_ts = (
             end_ts.tz_convert("UTC") if end_ts.tzinfo else end_ts.tz_localize("UTC")
         ).floor(f"{step}min")

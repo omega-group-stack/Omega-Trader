@@ -1,0 +1,140 @@
+name: Windows build
+
+# Builds the desktop app and the installer on a real Windows machine, then
+# boots the packaged executable and probes its dashboard. A green unit-test
+# suite proves the code is correct; only this proves the *bundle* is -- that
+# PyInstaller actually collected uvicorn's protocol modules, the dashboard's
+# static files and the config template.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "arena/**" ]
+    paths:
+      - "omega/**"
+      - "config/**"
+      - "packaging/windows/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows-build.yml"
+  release:
+    types: [ published ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pyinstaller==6.11.1
+          # Windows-only, so it can only be installed here. If the bundled
+          # app is ever pointed at a real terminal, this is what talks to it.
+          pip install MetaTrader5
+
+      - name: Run the test suite
+        run: pytest -q
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "version = $v"
+
+      - name: Build the executable
+        run: pyinstaller packaging/windows/omega.spec --noconfirm --clean
+
+      - name: Self-test the packaged app
+        shell: pwsh
+        # The real test: launch the frozen exe exactly as a user would, let
+        # it bring up the trader and the web server, and probe the HTTP API.
+        run: |
+          $env:OMEGA_HOME = "$env:RUNNER_TEMP\omega-selftest"
+          & "dist\OmegaTrader\OmegaTrader.exe" --selftest --no-browser
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "packaged app failed its self-test (exit $LASTEXITCODE)"
+            exit 1
+          }
+
+      - name: Check first run created a usable settings folder
+        shell: pwsh
+        run: |
+          $home_dir = "$env:RUNNER_TEMP\omega-selftest"
+          foreach ($f in @("config.yaml", "logs", "data")) {
+            if (-not (Test-Path "$home_dir\$f")) {
+              Write-Error "first run did not create $f"
+              exit 1
+            }
+            Write-Host "ok: $f"
+          }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=${{ steps.version.outputs.version }}" `
+            packaging\windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist\*.exe | ForEach-Object {
+            "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB)
+          }
+
+      - name: Verify the installer runs silently and the app launches
+        shell: pwsh
+        # /VERYSILENT with a per-user install needs no elevation, so the
+        # whole install -> launch -> uninstall cycle is exercised in CI.
+        run: |
+          $setup = (Get-ChildItem dist\OmegaTrader-Setup-*.exe)[0].FullName
+          $target = "$env:RUNNER_TEMP\OmegaTraderInstalled"
+          Start-Process -FilePath $setup -Wait -ArgumentList @(
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+            "/CURRENTUSER", "/DIR=$target", "/TASKS="
+          )
+          $exe = "$target\OmegaTrader.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "installer did not place OmegaTrader.exe in $target"
+            exit 1
+          }
+          $env:OMEGA_HOME = "$env:RUNNER_TEMP\omega-installed-home"
+          & $exe --selftest --no-browser
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "installed app failed its self-test"
+            exit 1
+          }
+          Write-Host "installed build self-tested cleanly"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmegaTrader-Setup-${{ steps.version.outputs.version }}
+          path: dist/OmegaTrader-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload the portable folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: OmegaTrader-portable-${{ steps.version.outputs.version }}
+          path: dist/OmegaTrader/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach the installer to the release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/OmegaTrader-Setup-*.exe
