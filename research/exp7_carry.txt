@@ -1,0 +1,75 @@
+====================================================================
+EXPERIMENT 7 -- G10 carry on the long sample
+====================================================================
+
+193 months of overlap: 2007-09 -> 2023-09
+192 portfolio months after the one-month lag
+rate dispersion: min 0.95pp  max 8.07pp  mean 3.63pp
+
+typical book: long NZD/AUD/GBP  short JPY/EUR/CHF
+
+--- decomposition (descriptive) ---
+  interest accrual               +2.39%/yr  Sharpe +7.702  t +30.81
+  spot move                      -3.04%/yr  Sharpe -0.369  t -1.48
+  costs                          -0.01%/yr
+
+--- the portfolio ---
+  gross                          -0.66%/yr  Sharpe -0.080  t -0.32
+  NET of retail costs            -0.67%/yr  Sharpe -0.082  t -0.33
+
+  total return   : -14.87% over 16.0 years
+  max drawdown   : -29.98%  (trough 2009-01)
+  worst month    : -9.75%  (2008-10)
+  best month     : +6.42%  (2009-03)
+  positive months: 96 of 192 (50%)
+
+--- 2008 carry crash (pre-registered: expect a large, concentrated hit) ---
+    2008-08    -3.89%
+    2008-09    -3.99%
+    2008-10    -9.75%
+    2008-11    -2.79%
+    2008-12    -2.85%
+    cumulative Aug-Dec 2008: -21.37%
+
+--- sub-periods (descriptive) ---
+  2007-2014 (87 mo)              -0.81%/yr  Sharpe -0.083  t -0.22
+  2015-2023 (105 mo)             -0.56%/yr  Sharpe -0.083  t -0.24
+  first half (96 mo)             -2.57%/yr  Sharpe -0.261  t -0.74
+  second half (96 mo)            +1.24%/yr  Sharpe +0.204  t +0.58
+
+--- engine validation ---
+  long high / short low        -0.080
+  inverted (must mirror)       +0.080
+  random books (should be ~0)  +0.027
+  mirror error: 0.00e+00
+
+--- consistency check vs experiment 6 (same window, new rate source) ---
+  interbank, 44 mo               +2.11%/yr  Sharpe +0.375  t +0.72
+  experiment 6 on policy rates, 43 mo : Sharpe +0.439  t +0.84
+  sources agree: True
+
+  95% CI on the annual return: [-4.68%, +3.34%]
+
+--- POST-HOC (not pre-registered, does not change the verdict) ---
+  excluding Aug-Dec 2008 (187 mo)   +0.81%/yr  Sharpe +0.104  t +0.41
+    Even with the crash surgically removed the portfolio does not
+    clear the gate -- and removing it is precisely the error that
+    makes carry look free.  The crash IS the risk being paid for.
+
+  experiment 6 recommended 4.1x to target 10%/yr, on a sample with
+  no crash in it.  Running that leverage over this sample:
+     2.1x -> max drawdown   -54.2%,  end equity 0.63x
+     4.1x -> max drawdown   -84.5%,  end equity 0.25x
+     8.3x -> max drawdown   -99.8%,  end equity 0.00x
+
+====================================================================
+PRE-REGISTERED VERDICT (one-sided)
+====================================================================
+  power: at n=192, t=1.68 needs Sharpe ~0.42
+         (experiment 6 at n=43 needed ~0.92 -- that is why it was void)
+  Sharpe >= 0.50 : -0.082 -> False
+  t      >= 1.68 : -0.33  -> False
+  t      >= 2.46 : -0.33  -> False  (Bonferroni, 7 tests)
+
+  RESULT: REJECTED by the pre-registered rule.
+  This time the test had the power to see Sharpe 0.42+, so the rejection is informative.
