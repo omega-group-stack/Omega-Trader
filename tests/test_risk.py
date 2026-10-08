@@ -411,3 +411,99 @@ def test_margin_guard_still_caps_an_oversized_position():
                            free_margin=4_000.0)
     assert result.margin_required <= 4_000.0 + 1e-6
     assert any("margin-capped" in n for n in result.notes)
+
+
+# --------------------------------------------------------------------------- #
+# Cost guardian (experiment 8) -- see omega/risk/manager.py
+# --------------------------------------------------------------------------- #
+def _cost_cfg(**kw) -> RiskConfig:
+    from omega.config import RiskConfig
+
+    cfg = RiskConfig()
+    cfg.scale_risk_with_confidence = False
+    for k, v in kw.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+def test_cost_guardian_blocks_tight_stop(spec, account):
+    """A 5-pip stop against a 1.2-pip typical spread costs ~24% > 20%: veto.
+
+    Experiment 8 lost -2.3R per trade in exactly this regime; the guard
+    makes it structurally impossible to take such trades by default.
+    """
+    risk = RiskManager(_cost_cfg(), 10_000.0)
+    sig = make_signal(atr=0.0005)          # ATR stop x2 = 10 pips -> clamped 10
+    sig.meta.pop("spread_points", None)
+    # force a fixed 5-pip stop
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=5.0)
+    risk = RiskManager(cfg, 10_000.0)
+    d = risk.evaluate(sig, spec, account, [])
+    assert not d.approved
+    assert "cost veto" in d.reason
+    # 1.2 pip spread = $12/lot on this spec; 5-pip stop = $50/lot -> 0.24
+    assert d.cost_fraction == pytest.approx(12.0 / 50.0, abs=1e-9)
+
+
+def test_cost_guardian_passes_wide_stop(spec, account):
+    """A 25-pip stop with the same spread costs 4.8% -- fine."""
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=25.0)
+    risk = RiskManager(cfg, 10_000.0)
+    d = risk.evaluate(make_signal(), spec, account, [])
+    assert d.approved
+    assert d.cost_fraction == pytest.approx(12.0 / 250.0, abs=1e-9)
+    assert d.warnings == []                # well under half the limit
+
+
+def test_cost_guardian_warns_near_the_limit(spec, account):
+    """10-pip stop -> 12% cost: approved but flagged."""
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=10.0)
+    risk = RiskManager(cfg, 10_000.0)
+    d = risk.evaluate(make_signal(), spec, account, [])
+    assert d.approved
+    assert any("cost is" in w for w in d.warnings)
+
+
+def test_cost_guardian_can_be_disabled(spec, account):
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=5.0,
+                    max_cost_fraction=0.0)
+    risk = RiskManager(cfg, 10_000.0)
+    d = risk.evaluate(make_signal(), spec, account, [])
+    assert d.approved
+
+
+def test_cost_guardian_uses_reported_spread_over_typical(spec, account):
+    """A signal that carries its own (wide) spread must be judged on it."""
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=25.0)
+    risk = RiskManager(cfg, 10_000.0)
+    sig = make_signal(spread_points=120.0)     # 12 pips actually reported
+    d = risk.evaluate(sig, spec, account, [])
+    assert not d.approved
+    assert d.cost_fraction == pytest.approx(120.0 / 250.0, abs=1e-9)
+
+
+def test_cost_guardian_counts_commission(spec, account):
+    """Commission is part of the round trip: $7/lot + $12 spread on a 25-pip
+    stop = 19/250 = 7.6% -- approved; on 8 pips = 19/80 = 23.8% -- vetoed."""
+    from omega.core.types import SymbolSpec
+
+    costly = SymbolSpec(symbol="EURUSD", digits=5, point=1e-5, tick_size=1e-5,
+                        tick_value=1.0, contract_size=100_000.0,
+                        commission_per_lot=7.0)
+    risk = RiskManager(_cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=25.0),
+                       10_000.0)
+    d = risk.evaluate(make_signal(), costly, account, [])
+    assert d.approved
+    assert d.cost_fraction == pytest.approx(19.0 / 250.0, abs=1e-9)
+
+    risk = RiskManager(_cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=8.0),
+                       10_000.0)
+    d = risk.evaluate(make_signal(), costly, account, [])
+    assert not d.approved
+
+
+def test_cost_fraction_surfaces_in_decision_dict(spec, account):
+    cfg = _cost_cfg(stop_mode="fixed_pips", fixed_stop_pips=25.0)
+    risk = RiskManager(cfg, 10_000.0)
+    d = risk.evaluate(make_signal(), spec, account, [])
+    assert d.to_dict()["cost_fraction"] == pytest.approx(0.048, abs=1e-3)

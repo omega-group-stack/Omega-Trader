@@ -483,6 +483,59 @@ def cmd_data(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_spreads(args: argparse.Namespace) -> int:
+    """Summarise a spread journal written by paper/live trading."""
+    import pandas as pd
+
+    from omega.data.spread_recorder import default_path
+
+    if args.path:
+        path = Path(args.path)
+    else:
+        storage = "runtime/omega.sqlite"
+        if args.config:
+            storage = load_config(args.config).storage.path
+        path = default_path(storage)
+    if not path.exists():
+        print(f"No spread journal at {path}")
+        print("Enable it with: omega paper --set execution.record_spreads=true")
+        return 1
+
+    df = pd.read_csv(path)
+    if df.empty:
+        print(f"{path} is empty")
+        return 0
+    ts = pd.to_datetime(df["timestamp"], utc=True)
+    df["hour"] = ts.dt.hour
+    # 1 pip = 10 points on 3/5-digit quotes (the usual MT5 case).
+    df["pips"] = df["spread_points"] / 10.0
+
+    print(f"\n{path}  ({len(df):,} observations, "
+          f"{ts.min()} .. {ts.max()})")
+    print(f"\n{'symbol':<8} {'n':>7} {'median':>8} {'p90':>8} {'p99':>8} "
+          f"{'max':>8}   (points / pips)")
+    for sym, g in df.groupby("symbol"):
+        q = g["spread_points"].quantile([0.5, 0.9, 0.99])
+        print(f"{sym:<8} {len(g):>7,} {q[0.5]:>8.1f} {q[0.9]:>8.1f} "
+              f"{q[0.99]:>8.1f} {g['spread_points'].max():>8.1f}   "
+              f"({q[0.5] / 10:.1f} / {g['spread_points'].max() / 10:.1f} pips)")
+
+    if "context" in df.columns:
+        for ctx, g in df.groupby("context"):
+            print(f"context {ctx:<6} n={len(g):>7,}  "
+                  f"median {g['spread_points'].median():.1f} pts")
+
+    print("\nworst hours by median spread (all symbols):")
+    by_hour = df.groupby("hour")["spread_points"].median().sort_values(
+        ascending=False
+    )
+    for hour, med in by_hour.head(5).items():
+        print(f"  {hour:02d}:00 UTC   median {med:.1f} pts "
+              f"({med / 10:.1f} pips)")
+    print("\nBacktest assumption to compare against: risk.typical_spread_points")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # Parser
 # --------------------------------------------------------------------------- #
@@ -598,6 +651,14 @@ def build_parser() -> argparse.ArgumentParser:
     ds = dsub.add_parser("describe", help="quality report for local CSV files")
     ds.add_argument("paths", nargs="+")
     ds.set_defaults(func=cmd_data)
+
+    # spreads
+    sp = sub.add_parser("spreads",
+                        help="summarise a recorded spread journal")
+    sp.add_argument("path", nargs="?",
+                    help="path to spreads.csv (default: beside the journal)")
+    sp.add_argument("-c", "--config", help="config file to read storage.path from")
+    sp.set_defaults(func=cmd_spreads)
 
     return parser
 

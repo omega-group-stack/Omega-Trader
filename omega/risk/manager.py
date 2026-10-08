@@ -50,6 +50,9 @@ class RiskDecision:
     sizing: Optional[SizingResult] = None
     plan: Optional[StopPlan] = None
     warnings: List[str] = field(default_factory=list)
+    # Round-trip cost (spread + commission) as a fraction of the stop
+    # distance -- the number the cost guardian (experiment 8) decides on.
+    cost_fraction: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +64,8 @@ class RiskDecision:
             "risk_pct": round(self.sizing.risk_pct, 3) if self.sizing else 0.0,
             "risk_money": round(self.sizing.risk_money, 2) if self.sizing else 0.0,
             "stop_pips": round(self.sizing.stop_pips, 1) if self.sizing else 0.0,
+            "cost_fraction": (round(self.cost_fraction, 3)
+                              if self.cost_fraction is not None else None),
             "warnings": self.warnings,
         }
 
@@ -204,6 +209,27 @@ class RiskManager:
         if plan.note:
             warnings.append(plan.note)
 
+        # --- cost guardian (experiment 8) -------------------------------------
+        # A trade whose round-trip cost eats too much of its stop distance
+        # is refused before any sizing work: with a 1.5-pip stop against a
+        # 1.2-pip spread, even perfect foresight lost money.
+        cost_fraction = self._cost_fraction(signal, spec, plan.stop_distance)
+        if cfg.max_cost_fraction > 0 and cost_fraction > cfg.max_cost_fraction:
+            return RiskDecision(
+                False,
+                reason=(
+                    f"cost veto: round-trip cost {cost_fraction:.0%} of stop "
+                    f"distance exceeds max_cost_fraction={cfg.max_cost_fraction:.0%}"
+                ),
+                plan=plan,
+                warnings=warnings,
+                cost_fraction=cost_fraction,
+            )
+        if cfg.max_cost_fraction > 0 and cost_fraction >= 0.5 * cfg.max_cost_fraction:
+            warnings.append(
+                f"round-trip cost is {cost_fraction:.0%} of the stop distance"
+            )
+
         # --- sizing -----------------------------------------------------------
         equity = account.equity if cfg.risk_base == "equity" else account.balance
         throttle = float(signal.meta.get("risk_multiplier", 1.0)) * self._streak_multiplier()
@@ -266,11 +292,33 @@ class RiskManager:
             sizing=sizing,
             plan=plan,
             warnings=warnings,
+            cost_fraction=cost_fraction,
         )
 
     # ------------------------------------------------------------------ #
     # Guard implementations
     # ------------------------------------------------------------------ #
+    def _cost_fraction(
+        self, signal: Signal, spec: SymbolSpec, stop_distance: float
+    ) -> float:
+        """Round-trip cost (spread + commission) as a fraction of stop distance.
+
+        Prefers the spread the feed actually reported in ``signal.meta``; when
+        none was reported it assumes ``typical_spread_points`` -- optimistic
+        spreads are how backtests lie.
+        """
+        if stop_distance is None or stop_distance <= 0:
+            return float("inf")
+        pts = float(signal.meta.get("spread_points") or 0.0)
+        if pts <= 0:
+            pts = self.cfg.typical_spread_points
+        cost_money = (spec.money_per_lot(pts * spec.point)
+                      + spec.commission_per_lot)
+        risk_money = spec.money_per_lot(stop_distance)
+        if risk_money <= 0:
+            return float("inf")
+        return cost_money / risk_money
+
     def _account_blocks(self, account: AccountState, now: datetime) -> str:
         cfg, st = self.cfg, self.state
 

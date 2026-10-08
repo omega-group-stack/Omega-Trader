@@ -150,6 +150,16 @@ risk:
   loss_risk_multiplier: 0.6    # trade at 60% size while in a losing streak
   recovery_wins_needed: 2
 
+  # Cost guardian — the lesson of experiment 8 (BACKTEST.md 5.10): on M1 a
+  # 1.5-pip stop against a 1.2-pip spread lost -2.3R per trade and even an
+  # oracle with perfect foresight lost money. Any trade whose round-trip
+  # cost (spread + commission) exceeds this fraction of its stop distance
+  # is refused before sizing. 0 disables the guard.
+  max_cost_fraction: 0.2
+  # Spread assumed when the feed reports none -- optimistic spreads are how
+  # backtests lie.
+  typical_spread_points: 12.0
+
 # ── Execution ───────────────────────────────────────────────────────────────
 execution:
   mode: paper                  # backtest | paper | live
@@ -171,6 +181,10 @@ execution:
   fill_on: next_open           # next_open (honest) | close
   stop_first_on_ambiguous_bar: true   # conservative intrabar assumption
   poll_seconds: 5.0
+  # Journal every observed spread to runtime/spreads.csv while paper or live
+  # trading -- this buys the real spread data the backtests never had.
+  # Review it with: omega spreads
+  record_spreads: true
 
 # ── Market data ─────────────────────────────────────────────────────────────
 data:

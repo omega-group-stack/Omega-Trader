@@ -261,6 +261,16 @@ class RiskConfig:
     loss_risk_multiplier: float = 0.6   # risk x0.6 while in a losing streak
     recovery_wins_needed: int = 2
 
+    # --- cost guardian -----------------------------------------------------
+    # Experiment 8 (BACKTEST.md 5.10): a 1.5-pip stop against a 1.2-pip
+    # spread lost -2.3R per trade and even an oracle with perfect foresight
+    # lost money.  The round-trip cost of a trade (spread + commission) may
+    # not exceed this fraction of its stop distance.  0 disables the guard.
+    max_cost_fraction: float = 0.2
+    # Spread (in points) assumed when the feed reports none -- a trade that
+    # only survives with a zero spread is not a trade.
+    typical_spread_points: float = 12.0
+
 
 @dataclass
 class ExecutionConfig:
@@ -275,6 +285,10 @@ class ExecutionConfig:
     stop_first_on_ambiguous_bar: bool = True  # conservative intrabar assumption
     poll_seconds: float = 5.0           # live/paper loop cadence
     confirm_live: bool = False          # must be true to send real orders
+    # Journal every observed spread to <storage dir>/spreads.csv while paper
+    # or live trading (one row per closed bar and per order).  This is how the
+    # project buys the real spread data its backtests never had.
+    record_spreads: bool = False
 
 
 def _coerce_like(raw: Any, like: Any) -> Any:

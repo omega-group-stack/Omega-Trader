@@ -24,6 +24,7 @@ from ..config import AppConfig
 from ..core.types import AccountState, Candle, CloseReason, SymbolSpec, Trade
 from ..data import DataFeed, build_feed
 from ..data.base import resample
+from ..data.spread_recorder import SpreadRecorder, default_path as spread_log_path
 from ..data.timeframes import delta as tf_delta
 from ..execution import build_broker
 from ..execution.simulated import SimulatedBroker
@@ -58,6 +59,9 @@ class LiveTrader:
         self.broker = broker
         self.risk: Optional[RiskManager] = None
         self.core: Optional[TradingCore] = None
+        # Optional spread journal (execution.record_spreads) -- see
+        # omega.data.spread_recorder for why this data matters.
+        self.spread_recorder: Optional[SpreadRecorder] = None
 
         self.events: Deque[dict] = deque(maxlen=500)
         #: Cross-sectional currency strength, rebuilt each polling pass.
@@ -116,6 +120,13 @@ class LiveTrader:
             self._last_bar[sym] = df.index[-1].to_pydatetime()
 
         self.core = TradingCore(cfg, self.broker, self.risk, self.strategies)
+
+        if getattr(cfg.execution, "record_spreads", False):
+            self.spread_recorder = SpreadRecorder(
+                spread_log_path(cfg.storage.path)
+            )
+            self.core.spread_recorder = self.spread_recorder
+            log.info("spread journal: %s", self.spread_recorder.path)
 
         # Evaluate (without trading) so the dashboard has a signal immediately.
         for sym in self.symbols:
@@ -225,6 +236,14 @@ class LiveTrader:
                     low=float(row["low"]), close=float(row["close"]),
                     volume=float(row["volume"]), spread=float(row["spread"]),
                 )
+                if self.spread_recorder is not None:
+                    spec = self.specs[sym]
+                    pts = float(bar.spread) or self.cfg.risk.typical_spread_points
+                    half = pts * spec.point / 2.0
+                    self.spread_recorder.record(
+                        closed_index, sym, bar.close - half, bar.close + half,
+                        pts, "bar",
+                    )
 
                 # In paper mode the simulated broker needs the bar to settle
                 # stops and targets; a live broker does that server-side.

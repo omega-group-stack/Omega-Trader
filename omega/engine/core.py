@@ -70,6 +70,9 @@ class TradingCore:
         self.strategies = strategies
         self.bar_delta = tf_delta(cfg.strategy.timeframe)
         self._last_signal: Dict[str, Signal] = {}
+        # Optional spread journal, attached by LiveTrader when
+        # execution.record_spreads is on (see omega.data.spread_recorder).
+        self.spread_recorder = None
 
     # ------------------------------------------------------------------ #
     def on_bar(self, symbol: str, bar_index: int, bar: Candle) -> BarOutcome:
@@ -236,6 +239,15 @@ class TradingCore:
 
         side = signal.direction.to_side()
         assert side is not None
+        if self.spread_recorder is not None:
+            pts = float(signal.meta.get("spread_points") or 0.0)
+            if pts <= 0:
+                pts = self.cfg.risk.typical_spread_points
+            half = pts * spec.point / 2.0
+            self.spread_recorder.record(
+                bar.time, symbol, bar.close - half, bar.close + half,
+                pts, "order",
+            )
         request = OrderRequest(
             symbol=symbol,
             side=side,
