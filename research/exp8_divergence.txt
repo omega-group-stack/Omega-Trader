@@ -1,0 +1,92 @@
+EXPERIMENT 8 -- hidden divergence in the correction wave
+pre-registered in PREREGISTRATION_8.md (commit eda5aa0)
+
+====================================================================
+SCALE A: context M15, trigger M1
+====================================================================
+signals: 240   taken: 236   skipped-overlap: 3   invalid-stop: 1
+
+====================================================================
+SCALE B: context H4, trigger M15
+====================================================================
+signals: 289   taken: 287   skipped-overlap: 2   invalid-stop: 0
+
+--- scale A: composition ---
+  stops: 64%  targets: 36%  time-exits: 0%
+  buys 112 / sells 124   median hold 3 bars
+  stop distance: median 1.5 pips, 10% 0.5, 90% 4.2
+  cost per trade: median 1.426R  90% 4.167R
+  per-pair net R:
+    AUDUSD  n= 11  net -1.928R
+    EURAUD  n= 14  net -1.409R
+    EURCAD  n= 12  net -1.661R
+    EURCHF  n= 18  net -6.987R
+    EURGBP  n= 15  net -1.773R
+    EURJPY  n= 11  net -1.682R
+    EURNZD  n= 12  net -0.628R
+    EURUSD  n=  9  net -3.486R
+    GBPAUD  n= 19  net -1.255R
+    GBPCAD  n= 19  net -2.116R
+    GBPCHF  n= 16  net -2.162R
+    GBPJPY  n= 10  net -0.941R
+    GBPUSD  n= 11  net -3.322R
+    NZDUSD  n= 15  net -1.798R
+    USDCAD  n= 19  net -2.584R
+    USDCHF  n= 10  net -1.712R
+    USDJPY  n= 15  net -2.241R
+
+--- scale B: composition ---
+  stops: 71%  targets: 29%  time-exits: 0%
+  buys 120 / sells 167   median hold 4 bars
+  stop distance: median 6.8 pips, 10% 2.9, 90% 17.0
+  cost per trade: median 0.303R  90% 0.729R
+  per-pair net R:
+    AUDUSD  n= 17  net -0.641R
+    EURAUD  n= 15  net -1.073R
+    EURCAD  n= 15  net -0.570R
+    EURCHF  n= 15  net -0.456R
+    EURGBP  n= 19  net -0.252R
+    EURJPY  n= 11  net -0.333R
+    EURNZD  n= 20  net -0.602R
+    EURUSD  n= 12  net -0.771R
+    GBPAUD  n= 22  net +0.047R
+    GBPCAD  n= 14  net -0.142R
+    GBPCHF  n= 23  net -0.671R
+    GBPJPY  n= 21  net -0.397R
+    GBPUSD  n= 19  net -1.016R
+    NZDUSD  n= 23  net -0.541R
+    USDCAD  n= 15  net -0.262R
+    USDCHF  n= 11  net -0.506R
+    USDJPY  n= 15  net -0.898R
+
+====================================================================
+CONTROLS (validation is mandatory before any number)
+====================================================================
+
+--- scale A ---
+  inverted (should mirror)           n= 240  net -2.658R  t -7.33
+  random direction, 20 seeds: mean -2.642R (range -2.758 .. -2.521)
+  oracle (must be large +)           n= 240  net -1.608R  t -4.50
+
+--- scale B ---
+  inverted (should mirror)           n= 289  net -0.374R  t -4.34
+  random direction, 20 seeds: mean -0.435R (range -0.560 .. -0.322)
+  oracle (must be large +)           n= 289  net +0.488R  t +5.64
+
+====================================================================
+NO-LOOKAHEAD AUDIT (recompute on truncated history)
+====================================================================
+  scale A: 6 reproduced, 0 missing -> PASS
+  scale B: 6 reproduced, 0 missing -> PASS
+
+====================================================================
+PRE-REGISTERED VERDICT
+====================================================================
+  scale A NET                        n= 236  gross +0.068R  net -2.297R  t -7.96
+    gross (before costs): +0.068R  t +0.72
+    net >= +0.05R: -2.297 -> False   t >= 1.68: -7.96 -> False   t >= 2.54 (Bonferroni): False
+    => REJECTED by the pre-registered rule
+  scale B NET                        n= 287  gross -0.143R  net -0.528R  t -6.53
+    gross (before costs): -0.143R  t -1.78
+    net >= +0.05R: -0.528 -> False   t >= 1.68: -6.53 -> False   t >= 2.54 (Bonferroni): False
+    => REJECTED by the pre-registered rule
